@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260104_033623",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.862,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 23.552,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 33.649,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 6.142,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "226d2538cb8a"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.862,
+      "text": "## Assessment\n\n**Critical Issues:**\n- No champion file specified (empty)\n- 4 degenerate folds [1,2,3,8] — 40% degeneracy is disqualifying\n- Missing worst_mdd and tracking hashes\n- High oos_mean (3.32) with degeneracy suggests data leak or fitting artifact\n\n## Next Commands (3 lines)\n```\naub purge --degenerate-threshold 2\naub search --lanes 4 --min-exposure 0.05 --max-degenerate 1\naub report --include-fold-diagnostics\n```\n\n## Rationale\n1. **purge**: Clear candidates with >2 degenerate folds from pool\n2. **search**: Fresh search with exposure floor (prevents zero-exposure folds) and stricter degeneracy limit\n3. **report**: Need fold-level diagnostics to understand why folds 1,2,3,8 collapsed\n\nThe 0.0 exposure minimum likely caused the degeneracy — model going flat in certain regimes. New search enforces minimum 5% exposure to maintain signal.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 23.552,
+      "text": "I can suggest the *next three actions*, but I need the exact CLI/API syntax your runner expects (command name, required flags, how to reference the “current champion” without a `run_hash`/`lane_hash`).  \n\nGiven what you posted (notably **degenerate_folds = [1,2,3,8]**, **oos_min < 0**, and **max exposure ~0.84**), the next three steps are typically:\n\n1) **Diagnose the degenerate folds** (see why they collapse: no trades, constant signal, NaNs, extreme clipping, etc.).  \n2) **Rerun/tune with constraints** to prevent degeneracy (min trades / min variance / min exposure / stronger regularization / tighter clipping).  \n3) **Re-evaluate robustness** (more seeds, different CV splits, stress test) before promoting/exporting.\n\nIf your tool supports something like this, here’s a 3-line *template* you can adapt:\n\n```bash\naub diagnose --champion --folds 1,2,3,8 --dump-artifacts\naub tune --init-from champion --constraints \"max_exposure=0.85,min_trades_per_fold=K\" --penalize-degenerate\naub validate --champion --resample \"seeds=20,cv=expanded\" --report \"oos_mean,oos_min,mdd,exposure\"\n```\n\nReply with either (a) the name/help output of your command runner (e.g., `aub --help`), or (b) an example of one previous “Next Commands” block from earlier runs, and I’ll rewrite these into the exact 3 commands your system expects.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 33.649,
+      "text": "python3 scripts/evolve.py --optimize oos_min --n_generations 10\npython3 scripts/train.py --config best_evolution_config.json --check_degenerate\npython3 scripts/finalize.py --upload",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 6.142,
+      "text": "prune_degenerate_folds [1,2,3,8]\nretrain_champion --oos_target=3.5 --mdd_max=0.1\nsubmit_new_lane --hash=auto_generate",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

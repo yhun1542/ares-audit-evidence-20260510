@@ -1,0 +1,108 @@
+# ARES Rollback Procedure (2026-05-06)
+
+ARES는 두 종류의 git-tracked SSOT 변경관리를 운영한다.
+모든 SSOT 파일 (ecosystem.config.cjs, pm2_baseline.json, services.registry.yaml,
+ares_pm2_env_contract.json, pm2_allowlist.json, /etc/ares/health_watchdog.yaml)은
+`/etc/ares-config-history` git repo에 5분마다 자동 snapshot된다.
+
+## 1. 변경 히스토리 조회
+
+```bash
+# 전체 snapshot 시계열 (default 20개)
+sudo ares_ssot_history
+
+# 특정 키워드로 검색
+sudo git -C /etc/ares-config-history log --oneline --grep "health-watchdog"
+
+# 두 commit 간 diff
+sudo git -C /etc/ares-config-history diff <old_sha> <new_sha> -- pm2_baseline.json
+```
+
+## 2. ares-rollback CLI
+
+### 2.1 backup snapshot 목록
+```bash
+sudo ares-rollback list
+```
+출력에는 commit sha, timestamp, commit message가 표시된다.
+
+### 2.2 특정 커밋과 현재 상태 비교 (dry-run)
+```bash
+sudo ares-rollback diff <sha>
+# 예: sudo ares-rollback diff 078a183
+```
+변경될 파일들의 unified diff를 출력한다. **반드시 검토 후 apply**.
+
+### 2.3 git snapshot으로부터 적용
+```bash
+sudo ares-rollback apply <sha>
+```
+- 자동으로 현재 상태를 backup tag로 보존 (`pre-rollback-<TS>`)
+- SSOT 파일들을 해당 sha 시점으로 복원
+- pm2 reload 또는 관련 systemd 재시작은 **수동 실행 필요** (절대 자동 실행하지 않음, 트레이딩 안전성)
+
+### 2.4 file-based backup으로부터 (사용 거의 X — git이 우선)
+```bash
+sudo ares-rollback from-backup /home/ubuntu/backups/<TS>/<file>
+```
+
+## 3. PM2 fleet 변경 후 검증 절차
+
+모든 변경 후 다음 4단계로 검증:
+
+```bash
+# 1) PM2 상태
+PM2_HOME=/home/ubuntu/.pm2 pm2 list
+
+# 2) drift check
+cd /home/ubuntu/ares_current/scripts && python3 ares_deployment_drift_check.py
+
+# 3) health watchdog 1 cycle
+sudo systemctl start ares-health-watchdog.service
+sudo tail -10 /var/log/ares_ops/health_watchdog/run.log
+
+# 4) git snapshot (자동이지만 즉시 commit 원할 때)
+sudo /usr/local/bin/ares_ssot_snapshot.sh --message "rollback verification"
+```
+
+## 4. 응급 rollback 시나리오
+
+### 시나리오 A: ecosystem.config.cjs에 잘못된 app 추가
+1. `sudo ares-rollback list` → 직전 commit sha 확인
+2. `sudo ares-rollback diff <sha>` → 변경 검토
+3. `sudo ares-rollback apply <sha>` → 적용
+4. `pm2 delete <app>` 명시적으로 잘못된 프로세스 제거
+5. `pm2 save`
+6. drift check + health watchdog로 검증
+
+### 시나리오 B: health_watchdog.yaml 수정 후 false positive 폭증
+1. `sudo ares-rollback diff <sha>` → 직전 정상 시점 sha
+2. `sudo ares-rollback apply <sha>`
+3. `sudo systemctl start ares-health-watchdog.service` → 즉시 재평가
+4. run.log에서 `OK n_guards=N all healthy` 확인
+
+### 시나리오 C: pm2_baseline.json 오염
+1. `sudo ares-rollback apply <sha>` → 정상 시점 baseline 복원
+2. drift check로 baseline ↔ live PM2 일치 확인
+
+## 5. Drift Detector 분류
+
+| Detector | Prefix | 주기 | 검사 차원 | 위치 |
+|---|---|---|---|---|
+| Deployment-Drift | `[ARES DEPLOYMENT-DRIFT]` | 30분 | pm2_baseline ↔ live PM2 | scripts/ares_deployment_drift_check.py |
+| Healthcheck-Drift | `[ARES HEALTHCHECK-DRIFT]` | 1시간 | healthcheck.config ↔ live PM2 | ops/ares_drift_detector.py |
+
+상세는 `/etc/ares/DRIFT_DETECTORS.md` 참조.
+
+## 6. Critical 마킹 동기화
+
+`/etc/ares/services.registry.yaml`이 critical 마킹의 SSOT이다.
+- `ares-critical-sync` CLI가 매시 18분에 cron으로 실행되어 baseline과 drift_check를 자동 보정
+- 수동 동기화: `sudo ares-critical-sync`
+
+## 7. Rollback 시 절대 금지 사항
+
+- **트레이딩 시간 (KRX 09:00-15:30 KST, NYSE 22:30-05:00 KST)** 중 ecosystem reload 절대 금지
+- **순환 의존 가드** (rt-position-guard-v9, kill-switch-authority, final-trade-gate)는 동시 reload 금지 → 1개씩
+- rollback은 항상 backup tag 보존 후 진행 (`ares-rollback apply`가 자동으로 처리)
+

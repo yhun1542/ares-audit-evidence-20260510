@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_101726",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.938,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 38.947,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 33.381,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 9.932,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "b106f741553f"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.938,
+      "text": "# AUB HANDOFF ANALYSIS\n\n## Issues Identified\n| Metric | Value | Status |\n|--------|-------|--------|\n| file | *empty* | ❌ CRITICAL |\n| degenerate_folds | 4/10 (40%) | ❌ EXCEEDS THRESHOLD |\n| worst_mdd | None | ⚠️ MISSING |\n| oos_mean | 3.32 | ⚠️ SUSPICIOUSLY HIGH |\n\n## Decision\n**REJECT** — Cannot accept handoff without champion file and with 40% degenerate folds.\n\n## Next Commands (3 lines)\n```\nREJECT degenerate_folds_exceed_threshold --count=4 --max=2\nDIAG fold_analysis --folds=1,2,3,8 --verbose\nRETRY lane=current --constraint=\"max_degenerate=2\"\n```",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 38.947,
+      "text": "Your current champion looks usable on average (`oos_mean ≈ 3.325`), but it has two clear issues to address next:\n\n- **Degenerate folds**: `[1, 2, 3, 8]` suggests instability / leakage / no-trade behavior / invalid optimization on those folds. This is usually the first thing to debug because it can inflate `oos_mean` while hiding failure modes.\n- **Tail risk / robustness**: `oos_min ≈ -0.026` indicates at least one OOS segment is slightly negative. Also `worst_mdd: None` likely means MDD wasn’t computed or the run didn’t emit it—worth fixing so you can optimize with a downside constraint.\n- **Exposure behavior**: `min/max = 0.0 / 0.839` means it sometimes goes completely flat. That can be fine, but if it correlates with the degenerate folds, it may indicate a “no signal / no trades” pathology.\n\n## Next Commands (3 lines)\n(Using neutral placeholders since I don’t have your exact AUB CLI/API names—tell me the command schema and I’ll format them precisely.)\n\n1) Recompute diagnostics including MDD and fold-level stats  \n`aub report --champion --fold-metrics --include-mdd --include-exposure`\n\n2) Drill into degenerate folds to identify the failure mode (no trades, NaNs, constraint violations, leakage)  \n`aub inspect --champion --folds 1,2,3,8 --check nan,leakage,notrades,constraints`\n\n3) Run a constrained re-tune to reduce degeneracy and improve worst-case OOS (e.g., add min-trades/min-variance, regularization, and/or cap exposure)  \n`aub tune --seed-from champion --objective oos_mean --constraint \"oos_min>-0.01\" --constraint \"degenerate_folds==0\" --constraint \"max_exposure<=0.85\"`\n\nIf you paste the expected command format (or a sample “aub …” command that your runner accepts), I’ll rewrite the 3 lines in the exact syntax your system needs.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 33.381,
+      "text": "python train.py --ticker AUB --seed 48291 --mode extensive\npython train.py --ticker AUB --seed 19284 --mode fast\npython train.py --ticker AUB --seed 55102 --hyperopt",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 9.932,
+      "text": "lane --seed 42 --folds 10 --markets equity,fixed_income --avoid-degenerate\nrun --max_exposure 0.9 --stop_mdd 0.1 --oos_weight 0.7\nevaluate --metric sharpe --threshold 2.0",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

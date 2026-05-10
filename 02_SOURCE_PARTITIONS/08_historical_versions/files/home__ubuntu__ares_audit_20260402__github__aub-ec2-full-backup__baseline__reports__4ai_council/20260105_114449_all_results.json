@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260105_114449",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 10.346,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 31.746,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 24.649,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 8.803,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "1aff2d30392c"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 10.346,
+      "text": "# Handoff Acknowledged - 20260105_114228\n\n## Status Summary\n\n| Metric | Champion Value |\n|--------|----------------|\n| Tuning Mean | 1.9038 |\n| Tuning Min | 0.4315 |\n| Lockbox Mean | 1.7925 |\n| Lockbox Min | 1.1337 |\n\n**Pipeline State**: Clean (no pending PASS candidates, no INCONCLUSIVE runs)\n\n## Executing Next Commands\n\n```bash\n# 1. Run AUB autopilot - select best module combinations\npython3 experiment_system/tools/aub_autopilot.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --run --select-best\n\n# 2. Run system autopilot - evaluate system-level candidates\npython3 experiment_system/tools/system_autopilot.py \\\n  --spec experiment_system/config/system_candidates.yaml \\\n  --run\n\n# 3. Generate next fix report\npython3 experiment_system/tools/aub_next_fix.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --output baseline/reports/next_fix.md\n```\n\n## Expected Outcomes\n\n| Command | Output |\n|---------|--------|\n| `aub_autopilot.py` | New candidate configs in `candidates/` |\n| `system_autopilot.py` | System-level evaluation results |\n| `aub_next_fix.py` | `baseline/reports/next_fix.md` with improvement suggestions |\n\n---\n\nReady to proceed. Should I run these commands sequentially and report results?",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 31.746,
+      "text": "Run the three “Next Commands” in order; they cover (1) module-level candidate search and auto-selection, (2) system-level candidate search, and (3) generating a targeted fix plan based on results.\n\n## 1) Module autopilot (pick best module candidate)\n```bash\npython3 experiment_system/tools/aub_autopilot.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --run --select-best\n```\nWhat to look for afterward:\n- A newly written/updated champion file (or an updated pointer to the champion) and a run report/log.\n- Confirm the selected best candidate improves (or at least doesn’t regress) both:\n  - `tuning_mean` (lower is better if this is a loss/error metric)\n  - `lockbox_mean` (should not degrade; lockbox is your generalization gate)\n- If it “wins” on tuning but loses on lockbox, treat it as overfitting and do **not** promote.\n\n## 2) System autopilot (end-to-end candidates)\n```bash\npython3 experiment_system/tools/system_autopilot.py \\\n  --spec experiment_system/config/system_candidates.yaml \\\n  --run\n```\nWhat to look for:\n- Any candidate that beats the current champion on **lockbox_mean** (primary), with tuning as secondary.\n- If multiple candidates are close, prefer the one with the best lockbox_min (worst-case performance) if that’s tracked.\n\n## 3) Generate next fix plan (actionable engineering steps)\n```bash\npython3 experiment_system/tools/aub_next_fix.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --output baseline/reports/next_fix.md\n```\nThis should produce a prioritized markdown plan. Review it for:\n- Clear “fix targets” (which module(s) and what failure mode)\n- Suggested experiments/hypotheses tied to observed regressions\n- Any missing evaluations (e.g., if lockbox coverage is sparse)\n\n## Quick sanity checks before/after running\n- Ensure the current champion file exists: `baseline/champion_v5_latest.json`.\n- Capture output artifacts into versioned folders if your tool doesn’t already (so you can diff results).\n- If you end up with “INCONCLUSIVE” outcomes, rerun with a fixed random seed (if supported) or increase eval repeats to reduce variance.\n\nIf you paste the resulting summary tables/log snippet (especially any candidate metrics vs champion), I can help decide whether to promote a new champion or what to change in `system_candidates.yaml` / the module registry to get a cleaner win.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 24.649,
+      "text": "**Status Acknowledgement**\n\nThe system state indicates a robust **Champion v5** is currently held.\n- **Robustness**: The metric degradation from Tuning (1.90) to Lockbox (1.79) is minimal (<6%), indicating excellent generalization.\n- **Risk Profile**: The Lockbox minimum (1.13) is significantly higher than the Tuning minimum (0.43). This suggests the strategy avoids catastrophic failure modes on unseen data, or the Lockbox period was less volatile than specific stress periods in the Tuning set.\n\n**Current Workflow State**:\n- No pending PASS candidates from the last cycle.\n- The system is configured to auto-select the best modules and proceed with system-level validation.\n\nThe proposed next commands are correct to continue the optimization loop.\n\n```bash\n# Verify registry and select best modules\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\n\n# Run system level candidates based on selection\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\n\n# Analyze results and determine next necessary fix/improvement\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 8.803,
+      "text": "This appears to be an automated handoff report from an AI experimentation or tuning pipeline (e.g., for model evaluation with metrics like tuning_mean/min and lockbox_mean/min). Key highlights:\n\n- **Current Champion**: `baseline/champion_v5_latest.json` (tuning: 1.90/0.43; lockbox: 1.79/1.13).\n- No PASS candidates or inconclusive results.\n- **Next Steps**: Run the provided bash commands to select best candidates, run system autopilot, and generate next fix report.\n\nI can't execute bash commands or access your local `experiment_system` tools/files. If you need help interpreting results, debugging scripts, or simulating outputs, provide more details!",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_083351",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 15.148,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 26.687,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 33.996,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 14.402,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "4899747c0320"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 15.148,
+      "text": "## Analysis\n\n**Critical Issues Detected:**\n1. **No champion file** — `file:` field is empty\n2. **4 degenerate folds** — [1, 2, 3, 8] represents 40% fold failure, exceeds typical 2-fold tolerance\n3. **No MDD recorded** — risk metrics unavailable\n4. **Suspiciously high oos_mean** (3.32) with degenerate folds suggests unstable optimization\n\n## Next Commands (3 lines)\n```\nSKIP\n# Reason: 4 degenerate folds exceeds threshold; no valid champion file\nLOG degenerate_investigation_needed lane=AUB folds=1,2,3,8\n```\n\n---\n\n**Recommendation:** Do not promote. Investigate fold degeneracy root cause before next AUB cycle. Common causes:\n- Insufficient data in fold periods\n- Target leakage causing perfect/zero predictions\n- Exposure constraints too tight for fold liquidity",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 26.687,
+      "text": "I’m missing the repo/CLI context to generate the exact 3 “Next Commands” lines (e.g., what executable/script you use, expected flags, and where configs live). If you paste **one prior run command** (or the project README snippet for running AUB), I can output the precise 3-line command block you want.\n\nIn the meantime, based on the handoff:\n\n- **degenerate_folds: [1,2,3,8]** is the biggest red flag. Before searching new models, the next step should be to **re-run/evaluate per-fold diagnostics** and identify why those folds collapse (data gaps, leakage guard triggering, illiquid periods, NaNs, exposure constraints, etc.).\n- **oos_min is slightly negative** while mean is decent; you likely need **regularization / exposure smoothing / stricter feature sanitation** to lift the worst fold.\n- **exposure max ~0.84** suggests the policy is already using high exposure; improvements may come from **risk controls** (vol targeting, turnover penalty) rather than pushing exposure higher.\n\n### Template “Next Commands” (replace placeholders)\n```bash\n# 1) Per-fold evaluation + artifact dump for the current champion\n<runner> eval --model <CHAMPION_PATH> --cv --save-fold-metrics --save-preds --out runs/diag_champion\n\n# 2) Deep-dive the degenerate folds (only those) with verbose checks\n<runner> eval --model <CHAMPION_PATH> --folds 1 2 3 8 --debug --check-nans --check-leakage --out runs/diag_degenerate\n\n# 3) Launch a constrained re-search targeting worst-fold uplift (robust objective)\n<runner> tune --seed 0 --cv --objective \"mean_oos - 0.5*max(0,-min_oos)\" --constraints \"no_degenerate_folds\" --out runs/tune_robust\n```\n\n### Tell me these 4 things and I’ll rewrite the above as the exact 3 lines for your setup\n1) The command you used to produce this handoff (even if it failed)  \n2) How you reference a “champion” model (path? run id?)  \n3) The available subcommands (e.g., `train/eval/tune/backtest`)  \n4) Where you want outputs to land (runs/, artifacts/, etc.)",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 33.996,
+      "text": "python evolve.py --focus_folds \"1,2,3,8\" --generations 20 --population 1000\npython evolve.py --objective maximize_oos_min --generations 30\npython search.py --new_run --seed random --generations 50",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 14.402,
+      "text": "regenerate fold 1\nregenerate fold 2\nregenerate fold 3",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

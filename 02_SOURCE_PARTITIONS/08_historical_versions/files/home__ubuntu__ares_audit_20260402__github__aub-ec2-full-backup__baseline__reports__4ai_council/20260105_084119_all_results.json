@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260105_084119",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 22.109,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 34.971,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 51.743,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 15.677,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "7d1cbd200d58"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 22.109,
+      "text": "# Handoff Acknowledged\n\n## Quick Assessment\n\n| Metric | Champion | Last PASS | Delta |\n|--------|----------|-----------|-------|\n| Lockbox Min | 1.134 | 1.347 | ✅ +18.8% |\n| Lockbox Mean | 1.793 | 1.793 | ≈ |\n| Worst MDD | -9.3% | -11.2% | ⚠️ -1.9pp |\n| Tuning Min | 0.431 | 0.051 | ⚠️ concern |\n\n## Key Takeaway\nThe candidate (`exp_macro_alpha_shadow`) shows **better tail robustness** on lockbox (min 1.35 vs 1.13) at the cost of ~2% worse drawdown. The poor tuning min (0.05) suggests potential overfitting risk in specific folds, but lockbox generalization is actually improving.\n\n## System Health\n- ✅ Runloop active (9 loops, 51min elapsed)\n- ✅ No stuck INCONCLUSIVE candidates\n- ✅ ~2 days budget remaining\n\n## Recommendation\n**Let automation continue.** No intervention needed. The candidate is a valid Pareto improvement on lockbox consistency. If MDD constraints tighten, champion remains safer. Monitor for:\n- Whether next candidates reduce MDD while retaining lockbox min gains\n- Tuning min instability (watch for sub-0.1 patterns)\n\nRun the provided commands when ready to resume.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 34.971,
+      "text": "### Status snapshot (as of 2026-01-05 08:39:52, loop 9)\n\n**Current Champion:** `baseline/champion_v5_latest.json`  \n- **tuning_mean / min:** 1.9038 / 0.4315  \n- **lockbox_mean / min:** 1.7925 / 1.1337  \n- **fold14_mdd:** -0.09310  \n- **worst_mdd:** -0.09310  \n\n**Last PASS Candidate:** `baseline/candidate_20260102_155322_exp_macro_alpha_shadow.json`  \n- **tuning_mean / min:** 1.7618 / 0.05084  *(weaker + much lower tail)*  \n- **lockbox_mean / min:** 1.7927 / 1.3469  *(mean ~flat vs champion; better lockbox min)*  \n- **fold14_mdd:** -0.09968  \n- **worst_mdd:** -0.11181  *(worse drawdown than champion)*  \n\n**Interpretation:**  \n- The candidate did **not** beat the champion on tuning mean, and it introduced **worse worst-case drawdown**.  \n- It did show an improvement in **lockbox minimum**, but not enough to offset the increased MDD / degraded tuning profile relative to the champion.\n\nNo “INCONCLUSIVE” items pending.\n\n---\n\n### Next actions (execute in order)\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n**What to look for after these run:**\n- Any new candidate that improves **lockbox_mean** while keeping **worst_mdd ≥ -0.0931** (i.e., not worse than champion), and avoids very low **tuning_min** (the 0.05 seen in the last candidate is a red flag for fragility).\n- If something beats champion mainly on lockbox min/mean but worsens MDD, consider it only if your acceptance criteria explicitly allow higher drawdown.\n\nIf you paste the next run’s summary table / top candidates, I can help decide whether to promote a new champion or adjust the selection thresholds.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 51.743,
+      "text": "Based on the handoff data, **Champion v5** remains the best performing model with a Tuning Mean of ~1.90 and a Worst MDD of -9.3%. The recent **Shadow** candidate passed safety checks (Lockbox Mean ~1.79) but did not outperform the champion in the tuning phase (1.76).\n\nTo advance, we need a candidate that improves upon the Champion's risk-adjusted returns, likely by filtering out false signals during chopping markets which might be contributing to the MDD.\n\nHere is the next candidate experiment configuration, incorporating an **ADX-based Trend Strength Filter** to refine the momentum signals.\n\n### Next Candidate File\n\n**File**: `experiment_system/candidates/candidate_20260105_adx_momentum.py`\n\n```python\nimport pandas as pd\nimport numpy as np\nfrom experiment_system.strategy.base import BaseStrategy\n\nclass AdxMomentumStrategy(BaseStrategy):\n    \"\"\"\n    Candidate: ADX Momentum v1\n    Hypothesis: Pure momentum strategies suffer in range-bound markets. \n    Adding an ADX (Average Directional Index) filter should improve Sharpe \n    by only taking trades when a strong trend is present.\n    \"\"\"\n\n    def __init__(self, params):\n        super().__init__(params)\n        self.mom_lookback = params.get('mom_lookback', 20)\n        self.adx_lookback = params.get('adx_lookback', 14)\n        self.adx_threshold = params.get('adx_threshold', 25)\n        self.vol_filter_window = params.get('vol_filter_window', 20)\n        self.max_vol = params.get('max_vol', 0.05)\n\n    def _calculate_adx(self, df, window):\n        # Simplified ADX calculation proxy for speed in vectorization\n        # True Range\n        df['tr1'] = df['high'] - df['low']\n        df['tr2'] = abs(df['high'] - df['close'].shift(1))\n        df['tr3'] = abs(df['low'] - df['close'].shift(1))\n        df['tr'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)\n        \n        # Directional Movement\n        df['up_move'] = df['high'] - df['high'].shift(1)\n        df['down_move'] = df['low'].shift(1) - df['low']\n        \n        df['plus_dm'] = np.where((df['up_move'] > df['down_move']) & (df['up_move'] > 0), df['up_move'], 0)\n        df['minus_dm'] = np.where((df['down_move'] > df['up_move']) & (df['down_move'] > 0), df['down_move'], 0)\n        \n        # Smoothed\n        tr_smooth = df['tr'].rolling(window=window).mean()\n        plus_di = 100 * (df['plus_dm'].rolling(window=window).mean() / tr_smooth)\n        minus_di = 100 * (df['minus_dm'].rolling(window=window).mean() / tr_smooth)\n        \n        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)\n        adx = dx.rolling(window=window).mean()\n        return adx\n\n    def generate_signals(self, df):\n        # 1. Momentum Signal\n        df['returns'] = df['close'].pct_change()\n        df['momentum'] = df['close'] / df['close'].shift(self.mom_lookback) - 1\n        \n        # 2. ADX Filter\n        df['adx'] = self._calculate_adx(df.copy(), self.adx_lookback)\n        \n        # 3. Volatility Filter (Safety)\n        df['vol'] = df['returns'].rolling(self.vol_filter_window).std()\n        \n        # Logic\n        df['signal'] = 0.0\n        \n        # Long Condition: Positive Momentum + Strong Trend (ADX > Thresh) + Low Vol\n        long_cond = (df['momentum'] > 0) & (df['adx'] > self.adx_threshold) & (df['vol'] < self.max_vol)\n        \n        # Short Condition: Negative Momentum + Strong Trend + Low Vol\n        short_cond = (df['momentum'] < 0) & (df['adx'] > self.adx_threshold) & (df['vol'] < self.max_vol)\n        \n        df.loc[long_cond, 'signal'] = 1.0\n        df.loc[short_cond, 'signal'] = -1.0\n        \n        return df['signal']\n\n    def get_parameter_space(self):\n        return {\n            'mom_lookback': [10, 20, 40, 60],\n            'adx_lookback': [10, 14, 20],\n            'adx_threshold': [15, 20, 25, 30],\n            'vol_filter_window': [10, 20],\n            'max_vol': [0.03, 0.05, 0.08]\n        }\n```\n\n### Updated Commands\n\n```bash\n# Save the new candidate\ncat << 'EOF' > experiment_system/candidates/candidate_20260105_adx_momentum.py\n# ... (File Content Above) ...\nEOF\n\n# Register and Run the Experiment\npython3 experiment_system/tools/system_autopilot.py --add-candidate experiment_system/candidates/candidate_20260105_adx_momentum.py --run\n```",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 15.677,
+      "text": "### Experiment Autopilot Status Summary (2026-01-05 08:39:52)\n\n#### Key Highlights\n- **Champion Holding Strong**: `baseline/champion_v5_latest.json`\n  - Superior across most metrics: higher `tuning_mean` (1.90 vs. 1.76), better (less negative) MDD on both `fold14` (-0.093) and `worst` (-0.093).\n  - Weakness: Lower `tuning_min` (0.43 vs. 0.05) and `lockbox_min` (1.13 vs. 1.35) – indicates potentially higher worst-case volatility in tuning/lockbox.\n- **Last PASS Candidate**: `baseline/candidate_20260102_155322_exp_macro_alpha_shadow.json`\n  - Competitive `lockbox_mean/min` (nearly identical mean, higher min).\n  - Fails to dethrone due to worse MDD (fold14: -0.100, worst: -0.112) and lower tuning performance.\n- **No Inconclusives**: Clean slate – no stalled evals.\n- **Runloop Progress**:\n  | Metric       | Value                  |\n  |--------------|------------------------|\n  | Started      | 2026-01-05 07:48:39   |\n  | Elapsed      | 0:51:13                |\n  | Remaining    | 1 day, 23:08:47        |\n  | Loops        | 9                      |\n\n#### Recommendations\n- **Prioritize MDD Stability**: Champion's edge here is key for risk-averse strategies (e.g., trading algos). Focus future candidates on improving `tuning_min` without sacrificing drawdown control.\n- **Candidate Insights**: The PASS shows promise in lockbox robustness (higher min). Explore hybrids blending its macro alpha shadow with champion's core.\n- **Next Actions**: Execute the provided commands verbatim – they're optimal for the loop:\n  ```bash\n  python3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\n  python3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\n  python3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n  ```\n  - `--select-best` will likely retain the champion.\n  - Monitor `next_fix.md` for targeted hyperparam tweaks (e.g., alpha scaling or shadow feature regularization).\n\nIf you need a simulated `next_fix.md` draft, metric visualizations, or tweaks to `module_registry.yaml`, provide more context/logs! 🚀",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

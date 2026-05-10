@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_053557",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 15.417,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 23.913,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 14.072,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "b0ac42b9187f"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 15.417,
+      "text": "# AUB Handoff Analysis\n\n## Critical Issue\n**All 19 folds degenerate with 0.0/0.0 exposure** — the baseline is not generating any positions. This is a non-functional state requiring immediate diagnosis.\n\n## Diagnosis\n- Zero exposure across all folds = signal generation or position sizing pipeline is broken\n- `unified_baseline` producing no trades indicates upstream feature/model failure\n- OOS metrics are meaningless without actual positions\n\n## Next Commands (3 lines)\n\n```bash\npython -m aub.diagnostics --lane ost_v62_unified --check signal_generation --verbose\npython -m aub.run --lane ost_v62_unified --mode debug_signals --fold 1 --output /tmp/signal_debug.csv\npython -m aub.baseline --lane ost_v62_unified --reset --config default_v62 --validate\n```\n\n## Expected Outcome\n1. **Diagnostics**: Identify where signal chain breaks (features → model → signals → positions)\n2. **Debug signals**: Inspect fold 1 raw signal values before position sizing\n3. **Reset baseline**: Reinitialize with validated default config to establish working champion",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 23.913,
+      "text": "Your “champion” is effectively **not trading**:\n\n- **exposure_min/max: 0.0 / 0.0** ⇒ the portfolio never takes a position.\n- **degenerate_folds: [1..19]** ⇒ every CV fold produced a degenerate outcome (commonly: constant predictions, zero variance scores, or post-processing/risk layer zeroing all trades).\n- With **worst_mdd = None**, that also often happens when there are **no trades / flat equity**.\n\nMost likely causes (in practice):\n1) **Post-processing thresholds** (entry threshold, confidence gate, top-k selection) are too strict ⇒ no signals pass.\n2) **Risk constraints** (max leverage, min lot, volatility targeting, exposure caps, turnover limits) clamp everything to zero.\n3) **Data/feature issue**: NaNs, misaligned timestamps, all-zero features, or label leakage defenses removing everything.\n4) **Model output collapsed**: predictions constant (e.g., all 0.5), or invalid (NaN) and later replaced with 0.\n\n## Next Commands (3 lines)\nSince I don’t know your exact CLI syntax, here are the *three* next actions you should run, expressed as “commands” you can map to your tooling:\n\n1) **Dump per-fold trading + prediction diagnostics** (trade count, %nonzero weights, pred mean/std, NaN counts)  \n2) **Run a backtest in debug/audit mode** to log why each bar/day produces “no trade” (which filter/constraint vetoed it)  \n3) **Temporarily relax/disable gates** (entry threshold / risk clamps) and rerun 1 fold to confirm signals exist, then re-tighten incrementally\n\nIf you paste the tool’s command help (or an example of prior “Next Commands”), I can rewrite those into the exact 3 CLI lines your system expects.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 14.072,
+      "text": "submit_model --lane ost_v63_unified --run new_baseline --seed 123\nevaluate_folds --folds [20] --model new_submission\nanalyze_degeneracy --threshold 0.1 --output report.json",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

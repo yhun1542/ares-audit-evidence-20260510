@@ -1,0 +1,28 @@
+# ARES supplemental operational manifest deployed by Manus AI.
+# This file documents canonical ownership without printing or storing secrets.
+version: 2026-04-29.ares-ops-hardening-v1
+policy: non_destructive_fail_closed_regression_and_secret_safe_observability
+services:
+  order-intent-executor:
+    canonical_entrypoint: /home/ubuntu/ares_current/order-intent-executor.mjs
+    pm2_expected: online
+    recovery_gate: /usr/local/bin/ares-oie-recovery-preflight
+  kill-switch-authority-v2:
+    canonical_entrypoint: /home/ubuntu/aub-trading-system/kill-switch-authority.mjs
+    pm2_expected: online
+  trading-enabled-refresher:
+    canonical_file: /home/ubuntu/ares_current/ops/trading_enabled_refresher.py
+    pm2_expected: absent_until_official_registry_owner_decision
+    rationale: prevents an unowned daemon from re-extending trading:enabled without explicit ownership.
+observability:
+  safe_pm2_projection: /usr/local/bin/ares-safe-pm2-projection
+  regression_runner: /usr/local/bin/ares-regression-runner
+  secret_scan: /usr/local/bin/ares-secret-redaction-scan
+  logrotate: /etc/logrotate.d/ares-regression
+rollback_and_integrity:
+  runbook: /home/ubuntu/ares-regression/docs/ROLLBACK.md
+  sha256_manifest: /home/ubuntu/ares-regression/config/deployed_files.sha256
+  verification_command: cd / && sha256sum -c /home/ubuntu/ares-regression/config/deployed_files.sha256
+monitoring_sla:
+  first_three_timer_runs: verify within first 24h after deployment
+  success_criteria: regression_rc=0, secret_scan_rc=0, fail_closed=true, no_secret_leak=true

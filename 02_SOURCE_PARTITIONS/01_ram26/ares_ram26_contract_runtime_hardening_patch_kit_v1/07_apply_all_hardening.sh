@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+CONFIRM="${ARES_HARDEN_ALL_CONFIRM:-}"
+if [[ "$CONFIRM" != "YES_APPLY_ARES_CONTRACT_RUNTIME_HARDENING" ]]; then
+  echo "ARES_HARDEN_ALL_CONFIRM must be YES_APPLY_ARES_CONTRACT_RUNTIME_HARDENING"
+  exit 2
+fi
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+ARES_HARDEN_AUDIT_CONFIRM=YES_ARES_HARDEN_READONLY_AUDIT bash "$DIR/01_audit_contracts_readonly.sh"
+RAM26_PROJECTOR_V3_CONFIRM=YES_INSTALL_RAM26_PROJECTOR_V3 bash "$DIR/02_install_projector_v3.sh"
+RAM26_RISK_RATE_CONFIRM=YES_INSTALL_RAM26_RISK_RATE_PUBLISHER bash "$DIR/03_install_risk_rate_publisher.sh"
+KIS_WS_STATUS_SYNTH_CONFIRM=YES_INSTALL_KIS_WS_STATUS_SYNTH bash "$DIR/04_install_kis_ws_status_synthesizer.sh"
+ARES_REDIS_ENV_AUDIT_CONFIRM=YES_AUDIT_PM2_REDIS_ENV bash "$DIR/05_pm2_redis_env_audit_fix.sh"
+bash "$DIR/06_verify_hardening_gate.sh"
+echo "ARES_CONTRACT_RUNTIME_HARDENING_SEQUENCE_COMPLETE"

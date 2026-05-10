@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260104_010619",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 18.758,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 31.226,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 24.87,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 11.102,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "3df5a39943ce"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 18.758,
+      "text": "# AUB Handoff Analysis\n\n## Status Assessment\n\n| Metric | Value | Status |\n|--------|-------|--------|\n| OOS Mean | 3.325 | ✅ Positive |\n| OOS Min | -0.026 | ✅ Near zero |\n| Degenerate Folds | 4/10 (40%) | ❌ Critical |\n| Champion File | None | ❌ Missing |\n| Exposure Range | 0.0 - 0.84 | ⚠️ Zero-exposure periods |\n\n## Diagnosis\n\n**Primary issue**: 40% degenerate fold rate indicates model instability. Folds 1, 2, 3 (early period) and fold 8 suggest regime sensitivity or feature decay.\n\n**No champion file** + **high degeneracy** = lane likely needs reset or major revision.\n\n## Next Commands (3 lines)\n\n```\naub diagnose --folds 1,2,3,8 --report degeneracy_cause\naub lane new --base robust_exposure --min-exposure 0.15 --regularization L1\naub run --cv 10 --require-valid-folds 8\n```\n\n## Rationale\n\n1. **Diagnose**: Identify root cause of degeneracy in specific folds before proceeding\n2. **New lane**: Enforce minimum exposure constraint + L1 regularization to prevent feature collapse\n3. **Run with gate**: Require ≥8 valid folds to promote as champion (reject if >20% degenerate)",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 31.226,
+      "text": "I see the auto-handoff summary, but the “Next Commands (3 lines)” section is empty—so I can’t tell what workflow/tooling you’re using or what you want to run next.\n\nIf you tell me what repo/CLI this is (paste `README` snippet or the last ~30 lines of your terminal log), I can write the exact 3 next commands. Meanwhile, here’s what your handoff implies and the most common next steps.\n\n## What the handoff says\n- **Current champion file:** blank → the run likely didn’t persist an artifact/model path, or the handoff generator couldn’t find it.\n- **oos_mean = 3.325** and **oos_min = -0.0257** → average OOS metric looks strong, but at least one fold is slightly negative.\n- **worst_mdd: None** → max drawdown wasn’t computed, failed to compute, or wasn’t logged.\n- **exposure min/max: 0.0 / 0.8388** → strategy can be fully flat; max leverage/exposure capped below 1 (or learned < 1).\n- **degenerate_folds: [1,2,3,8]** → 4 folds produced invalid/degenerate behavior (common causes: no trades, NaNs, constant predictions, empty test slice, constraint violations).\n\n## Typical “next commands” (choose the trio that matches your goal)\n\n### A) Reproduce + get full logs (recommended first)\n1. `python -m yourpkg.train --config configs/champion.yaml --seed 0 --log-level DEBUG`\n2. `python -m yourpkg.eval --run last --folds all --dump-fold-metrics`\n3. `python -m yourpkg.report --run last --include-degenerate --save reports/last.html`\n\n### B) Diagnose degenerate folds specifically\n1. `python -m yourpkg.eval --run last --folds 1,2,3,8 --dump-preds --dump-positions`\n2. `python -m yourpkg.checks --run last --assert-no-nans --assert-nonempty-splits`\n3. `python -m yourpkg.plot --run last --folds 1,2,3,8 --what equity,exposure,signal`\n\n### C) Compute/restore missing MDD\n1. `python -m yourpkg.eval --run last --metrics mdd,sharpe,sortino --recompute`\n2. `python -m yourpkg.report --run last --tables metrics --save reports/last_metrics.md`\n3. `python -m yourpkg.export --run last --artifact-dir artifacts/last`\n\n## What I need from you to write the *exact* 3 commands\nPaste one of the following:\n- the CLI help output: `your_command --help`, **or**\n- the last 40–80 lines of terminal output from the run that produced this handoff, **or**\n- the repo structure (top-level files) + how you usually run training/eval.\n\nAlso tell me your intent: **(1)** improve OOS min, **(2)** eliminate degenerate folds, **(3)** compute MDD, or **(4)** export the champion.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 24.87,
+      "text": "python scripts/neutralize.py --target_exposure 0.2 --model_input latest_run\npython scripts/repair_folds.py --folds 1 2 3 8 --method bagging\npython scripts/backtest.py --min_oos 0.0 --save_champion",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 11.102,
+      "text": "scan --target oos_min --budget 100\nmutate --champion --focus degenerate_folds --rate 0.1\nevaluate --full_oos --update_champion",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

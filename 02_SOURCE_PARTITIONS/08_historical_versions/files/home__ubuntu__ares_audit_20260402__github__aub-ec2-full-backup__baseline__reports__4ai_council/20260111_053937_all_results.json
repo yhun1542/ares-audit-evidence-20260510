@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_053937",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 18.935,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 33.444,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 13.732,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "a5efd2c07e57"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 18.935,
+      "text": "## Assessment\n\nBaseline is **degenerate** — zero exposure across all 19 folds. No valid signals generated.\n\nThis is a null champion (placeholder). Strategy code or parameters needed to proceed.\n\n## Next Commands\n\n```\naub status --lane ost_v62_unified --diagnostics\naub run --lane ost_v62_unified --config default_signals --force-regen\naub sweep --lane ost_v62_unified --param threshold:0.01:0.10:0.01 --param lookback:5:60:5\n```\n\n**Rationale:**\n1. **diagnostics** — Identify why signal generation failed (data issue? code error? config missing?)\n2. **force-regen** — Attempt baseline with explicit signal config\n3. **sweep** — If #2 succeeds, grid search basic params to escape degeneracy\n\n---\n\n**Blocker:** Need to confirm strategy file exists and contains valid signal logic. Current state suggests either missing implementation or misconfigured data pipeline.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 33.444,
+      "text": "Your current “champion” is effectively **not trading**:\n\n- **exposure_min/max: 0.0 / 0.0** → positions are always flat\n- **degenerate_folds: [1..19]** → every CV fold ended up degenerate (typically “no trades”, “all-NaN preds”, “all filtered out”, or “all weights zero”)\n- Any OOS metric you see (oos_mean/min) is therefore likely coming from a fallback path (e.g., benchmark return, constant predictor, or metric computed on empty/filtered sets).\n\n### Likely root causes to check (in order)\n1. **Signal generation produces all zeros / NaNs**\n   - thresholds too strict, zscore window too long, missing features, post-merge NaNs\n2. **Position sizing clamps to zero**\n   - volatility target / risk limit division by 0, leverage cap = 0, lot rounding, min notional too high\n3. **Execution / eligibility filters remove everything**\n   - “tradable universe” mask false everywhere, volume/liquidity constraints, market-hours filter, lookahead-safe alignment shifting everything out\n4. **CV fold slicing bug**\n   - empty validation segments, mismatched timestamps after join, fold boundaries outside data\n\n---\n\n## Next Commands (3 lines)\n(Adjust to your actual CLI/tooling names; these are the three most diagnostic actions.)\n\n1. `aub inspect-run --run unified_baseline --lane ost_v62_unified --report exposures,tradecount,nanrate --by-fold`\n2. `aub debug-fold --run unified_baseline --lane ost_v62_unified --fold 1 --dump preds,signals,positions,eligibility_mask`\n3. `aub validate-data --lane ost_v62_unified --checks \"timestamp_alignment,join_coverage,feature_nans,universe_coverage\" --by-fold`\n\nIf you paste the available command list (or the project’s CLI entrypoints / Makefile targets), I can rewrite those into exact commands that work in your environment.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 13.732,
+      "text": "generate_candidates num=20 seed=42\nsubmit_lane lane=ost_v63_unified parallel=5\nmonitor_progress interval=300",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

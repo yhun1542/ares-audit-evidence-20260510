@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_102813",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 18.586,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 44.496,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 9.79,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "4bd641ce0946"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 18.586,
+      "text": "## Analysis\n\nThe current \"champion\" is completely degenerate:\n- **Zero exposure** (0.0/0.0) — strategy takes no positions\n- **All 19 folds degenerate** — no valid trading signals across entire walk-forward\n- **No MDD** — nothing to draw down when not trading\n- This is the null baseline, not a real strategy\n\n## Next Commands (3 lines)\n\n```\naub generate --lane ost_v62_unified --seed-from scratch --min-exposure 0.05\naub backtest --lane ost_v62_unified --candidate pending --validate-trades\naub evaluate --lane ost_v62_unified --promote-if-valid\n```\n\n## Rationale\n\n1. **generate**: Create initial candidate with `--min-exposure 0.05` constraint to ensure it actually trades (avoids another degenerate submission)\n2. **backtest**: Run walk-forward with `--validate-trades` flag to catch degeneracy early per-fold\n3. **evaluate**: Compare against baseline; any strategy with actual positions and non-catastrophic metrics will beat the null model\n\nThe unified_baseline exists solely as a \"beat this or don't submit\" floor. Priority is establishing a non-degenerate champion before iterating on performance.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 44.496,
+      "text": "Your current “champion” is effectively **not trading** (exposure min/max = 0.0/0.0), which explains the **degenerate_folds** list covering almost everything and the missing MDD. Next step is to find *where* weights/positions get zeroed (signal → forecast → risk/constraints → sizing → execution).\n\n## Next Commands (3 lines)\n```bash\naub report --lane ost_v62_unified --run unified_baseline --include folds,exposure,turnover,n_positions,signal_stats,constraint_binding\naub debug --lane ost_v62_unified --run unified_baseline --trace weights,preclip_weights,postclip_weights,positions,orders --fold 1\naub sweep --lane ost_v62_unified --base-run unified_baseline --set exposure_target=0.05,0.10 --set max_gross=0.10,0.25 --tag exposure_unstick\n```\n\n## What you’re looking for in the outputs (quick checklist)\n- **Signal stats**: nonzero rate, NaN rate, and cross-sectional std per day; if signal is all-zeros/NaNs → upstream issue.\n- **Universe size**: if eligible assets count is near-zero on most dates → filters/calendar/data alignment issue.\n- **Constraint binding**: leverage/gross/net/sector/risk limits might be forcing everything to 0.\n- **Post-processing**: clipping/rounding/min-lot/min-notional can zero small weights into no orders.\n- **Execution**: if orders are generated but all rejected → locates the issue in broker/market rules.\n\nIf you tell me the exact CLI names/options your AUB runner supports (or paste `aub --help` / the pipeline config), I can rewrite those 3 commands to match your actual tooling precisely.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 9.79,
+      "text": "run lane ost_v62_unified --folds 1-5 --lr 1e-5 --epochs 10\nrun lane ost_v62_unified --folds 6-10 --lr 5e-5 --epochs 10\nrun lane ost_v62_unified --folds 11-19 --lr 1e-4 --epochs 5",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

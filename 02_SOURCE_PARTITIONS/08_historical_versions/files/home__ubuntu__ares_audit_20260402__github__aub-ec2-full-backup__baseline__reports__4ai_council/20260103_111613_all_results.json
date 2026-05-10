@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_111613",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 15.917,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 21.171,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 40.722,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 10.494,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "4d0e70bc35ef"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 15.917,
+      "text": "## Assessment\n\n**REJECT** - Cannot proceed with handoff:\n\n1. **No champion file specified** - `file:` field is empty\n2. **High degeneracy** - 4/10 folds degenerate (40%) exceeds acceptable threshold\n3. **Missing tracking** - No `lane_hash` or `run_hash` for audit trail\n4. **No MDD recorded** - `worst_mdd: None` prevents risk validation\n\n## Next Commands (3 lines)\n```\nREJECT: missing_file, high_degeneracy_rate\nREQUEST: resubmit with valid file path and lane_hash\nINVESTIGATE: degenerate_folds [1,2,3,8] root cause before retry\n```",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 21.171,
+      "text": "## What stands out\n- **Champion `file` is empty** and **`lane_hash`/`run_hash` are None** → you can’t reliably reproduce/compare unless the artifact + hashes get written.\n- **`degenerate_folds: [1, 2, 3, 8]`** → a big red flag for CV integrity (often: no trades, constant predictions, missing targets, leakage/NaNs after filtering, or fold windows too short).\n- **`worst_mdd: None`** → either not computed or the backtest object didn’t emit an equity curve (sometimes also caused by “no trades” in some folds).\n\n## Next Commands (3 lines)\n(Use/translate to your actual AUB CLI; the intent is what matters.)\n\n1) **Persist + fingerprint the current champion**\n```bash\naub champion export --latest --out artifacts/champion.pkl --emit-hashes\n```\n\n2) **Compute missing risk stats (incl. worst MDD)**\n```bash\naub eval --in artifacts/champion.pkl --metrics oos_mean,oos_min,worst_mdd --save reports/champion_eval.json\n```\n\n3) **Drill into degenerate folds to find the root cause**\n```bash\naub cv diagnose --in artifacts/champion.pkl --folds 1,2,3,8 --save reports/degenerate_folds.json\n```\n\nIf you tell me the exact command interface you’re using (or paste `aub --help` / a prior run command), I can rewrite those 3 lines in the exact syntax your setup expects.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 40.722,
+      "text": "run_evolution --pop_size 100 --generations 20 --fix_degenerate\nvalidate_champion --min_oos 2.0 --max_exposure 0.9\nsave_state --output_dir ./handoff_data/",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 10.494,
+      "text": "```bash\npython runner.py --mode train --exclude_folds 1,2,3,8 --target oos_mean\npython runner.py --mode evaluate --load champion --compute mdd exposure\npython runner.py --mode submit --generate lane_hash run_hash\n```",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

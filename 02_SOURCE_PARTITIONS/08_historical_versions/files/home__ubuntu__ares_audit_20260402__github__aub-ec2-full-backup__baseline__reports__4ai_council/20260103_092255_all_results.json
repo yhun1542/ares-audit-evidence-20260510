@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_092255",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 15.373,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 31.677,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 43.568,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 9.792,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "a57e25400dcc"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 15.373,
+      "text": "## Assessment\n\n**REJECT** - This candidate has critical issues:\n\n1. **No file specified** - Empty champion file path\n2. **40% degenerate folds** - Folds [1, 2, 3, 8] are degenerate (4/10 is unacceptable)\n3. **Missing MDD** - No drawdown metrics recorded\n4. **No provenance** - Both lane_hash and run_hash are None\n5. **Suspiciously high OOS mean** (3.32) with high degeneracy suggests data/methodology issues\n\n## Next Commands (3 lines)\n```\naub diag --folds 1,2,3,8 --verbose\naub status --lane all\naub sweep --reset --min-exposure 0.05 --max-degen 1\n```\n\n## Rationale\n- First: Diagnose why 4 folds went degenerate (likely exposure collapse or signal issues)\n- Second: Check if other lanes have healthier candidates\n- Third: If no viable alternatives, reset sweep with stricter constraints (minimum exposure floor, max 1 degenerate fold allowed)\n\nDo not promote to production until degeneracy < 20% and MDD is tracked.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 31.677,
+      "text": "I’m missing the repo/CLI context for what “AUB” commands look like, but based on the handoff stats, the next three actions should target (a) missing MDD, and (b) the degenerate folds `[1,2,3,8]`, while (c) tightening exposure behavior (min is 0.0; max ~0.84).\n\nHere are **three “next commands”** in **generic/pseudocode** form you can translate to your actual tooling:\n\n1) **Compute/record missing drawdown + full report for the current champion**\n```bash\naub eval --champion --metrics oos_mean,oos_min,worst_mdd,exposure --save-report\n```\n\n2) **Diagnose the degenerate folds (why they’re degenerate: empty trades, NaNs, constant preds, label leakage, etc.)**\n```bash\naub diagnose --champion --folds 1,2,3,8 --dump fold_stats,signal_hist,trade_count,nans\n```\n\n3) **Rerun/search with constraints or regularization to reduce degeneracy + stabilize exposure**\n```bash\naub tune --seed-sweep 20 --cv --reject-degenerate --exposure-max 0.85 --min-trades-per-fold 50 --save-best\n```\n\nIf you paste the actual command patterns your project uses (or `--help` output), I can rewrite these as exact runnable commands.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 43.568,
+      "text": "python3 train.py --resume --fix_degenerate_folds \"1,2,3,8\" --max_exposure 0.6\npython3 validate.py --min_oos_score 0.0 --strict\npython3 handoff.py --status \"optimizing_robustness\"",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 9.792,
+      "text": "evolve --exclude_folds 1,2,3,8 --target_oos 3.5\nrun_lane --max_exposure 0.9 --mdd_limit -0.1\nvalidate_new_champion --oos_trials 100",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

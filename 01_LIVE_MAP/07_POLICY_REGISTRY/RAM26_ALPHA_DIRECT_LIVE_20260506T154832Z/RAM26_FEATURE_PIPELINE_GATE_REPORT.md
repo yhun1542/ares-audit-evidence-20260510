@@ -1,0 +1,9 @@
+# RAM26 Feature Pipeline Gate
+
+## Artifacts
+
+- Market meta: `/home/ubuntu/ares_promotions/RAM26_ALPHA_DIRECT_LIVE_20260506T154832Z/feature_pipeline_unblock/RAM26_FEATURE_PIPELINE_GATE_20260509T021630Z/market_meta.json`
+- Daily meta: `/home/ubuntu/ares_promotions/RAM26_ALPHA_DIRECT_LIVE_20260506T154832Z/feature_pipeline_unblock/RAM26_FEATURE_PIPELINE_GATE_20260509T021630Z/daily_meta.json`
+- Features meta: `/home/ubuntu/ares_promotions/RAM26_ALPHA_DIRECT_LIVE_20260506T154832Z/feature_pipeline_unblock/RAM26_FEATURE_PIPELINE_GATE_20260509T021630Z/features_meta.json`
+- Features HLEN: `/home/ubuntu/ares_promotions/RAM26_ALPHA_DIRECT_LIVE_20260506T154832Z/feature_pipeline_unblock/RAM26_FEATURE_PIPELINE_GATE_20260509T021630Z/features_hlen.txt`
+- Gate JSON: `/home/ubuntu/ares_promotions/RAM26_ALPHA_DIRECT_LIVE_20260506T154832Z/feature_pipeline_unblock/RAM26_FEATURE_PIPELINE_GATE_20260509T021630Z/pipeline_gate.json`

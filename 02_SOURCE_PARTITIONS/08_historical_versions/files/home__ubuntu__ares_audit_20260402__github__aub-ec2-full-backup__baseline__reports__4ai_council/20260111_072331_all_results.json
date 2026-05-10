@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_072331",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.926,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 34.549,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 22.164,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "4d973338279f"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.926,
+      "text": "## Analysis\n\n**Critical Issue:** Complete degeneracy across all 19 folds with zero exposure (0.0/0.0). The baseline is not generating any trades.\n\n**Root Cause:** Likely overly restrictive entry conditions or signal threshold misconfiguration in the unified baseline initialization.\n\n## Next Commands (3 lines)\n\n```\nost sweep --lane v62_unified --param entry_z --range 0.5:2.5:0.25 --folds 1-5\nost diag --lane v62_unified --check signal_coverage --verbose\nost reset --lane v62_unified --from last_nondegenerate --fallback defaults\n```\n\n**Rationale:**\n1. **Sweep entry threshold** on subset of folds to find where trades activate\n2. **Diagnose signal coverage** to verify signals exist before filtering\n3. **Reset fallback** to recover known-working parameters if sweep fails",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 34.549,
+      "text": "Your handoff shows a clearly broken/degenerate “champion” run:\n\n- **exposure_min/max: 0.0 / 0.0** → the strategy never takes any position (or exposure is being computed as zero).\n- **degenerate_folds: [1..19]** → *every* CV fold is degenerate, which usually means “no trades / no signal / all NaNs / constant predictions / filter eliminates all rows”.\n- **worst_mdd: None** → also consistent with “no equity curve movement”.\n\nBefore I can write the exact “Next Commands (3 lines)” in your project’s CLI, I need one of:\n1) the command template your repo expects (e.g., `aub run ...`, `make ...`, `python -m ...`), or  \n2) the last few commands you ran (or the README “how to run” snippet).\n\nIn the meantime, here are the **three next actions** I recommend (conceptually), and the **most common culprits** to check.\n\n## What to do next (3 actions)\n1) **Open the champion’s diagnostics/artifacts** for one fold (fold 1) and verify:\n   - number of rows after filtering\n   - number of trades / positions\n   - prediction distribution (min/max/mean, % zeros)\n   - any “all NaN” feature columns\n\n2) **Run a “single-fold debug” backtest** with verbose logging enabled so you can see *why* exposure stays at 0 (threshold too high, signal always filtered, position sizing returns 0, etc.).\n\n3) **Run a minimal “sanity” strategy** (e.g., always-long or random signal) on the same data pipeline:\n   - if that also yields exposure 0 → the issue is in data, instrument mapping, or execution rules\n   - if sanity works → the issue is in model output, thresholds, or feature/label alignment\n\n## Common causes of exposure=0 + all folds degenerate\n- **Signal thresholding**: e.g., you require `abs(pred) > t` but predictions are near 0 or always NaN.\n- **Post-processing clamps to 0**: risk targeting, volatility scaling, or position rounding to 0 due to min-lot / contract size.\n- **Data filters eliminate all rows** in each fold (date ranges wrong, missing symbol, NaNs after joins).\n- **Feature leakage guard drops everything** (e.g., “future” columns removed incorrectly and leaves empty feature set).\n- **Label alignment bug**: prediction timestamps don’t match tradable timestamps → all signals become NaN at execution time.\n\n## Quick questions (so I can produce the exact 3-line command block)\n1) What is the runner interface? (e.g., `make backtest`, `aub run`, `python -m aub...`)\n2) Where are artifacts written (path pattern)? Do you have a run directory for `run_hash=unified_baseline`?\n3) Are folds supposed to be 19 total? (Your degenerate list suggests yes.)\n\nPaste:\n- your repo’s “how to run” snippet (or the last 10 terminal lines),\nand I’ll return **exactly three concrete commands** to (a) inspect artifacts, (b) run a single-fold debug, and (c) run a sanity backtest.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 22.164,
+      "text": "generate_strategies num=50 seed=20260111\nbacktest_all lane_hash=ost_v62_unified run_hash=unified_challenger_v1 folds=1-19\nselect_champion threshold_oos_min=2.0",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

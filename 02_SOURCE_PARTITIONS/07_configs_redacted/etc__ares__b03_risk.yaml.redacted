@@ -1,0 +1,69 @@
+# ============================================================================
+# B03 Dynamic Risk Scaler — 설정 템플릿 (v1.0.0)
+#
+# 중요: 본 모듈은 "권고"만 발행한다. F22/DTCH 가 자동으로 반영하지 않음.
+# observe_only: true 를 유지하는 한, 어떤 포지션도 변경되지 않는다.
+# ============================================================================
+
+redis:
+  url: ""
+  host: "127.0.0.1"
+  port: 6379
+  db: 0
+  use_tls: false
+  password_env: "ARES_REDIS_PASSWORD"
+
+# VIX 입력.
+# 실제 EC2 Redis 에 이 키가 어떤 형태로 존재하는지 반드시 discover 로 확인.
+# 흔한 패턴:
+#   - hash: kind="hash", value_field="value" or "last_trade_price"
+#   - scalar: kind="scalar_string" (값 자체가 숫자), ts 는 <key>:ts 별도 키
+vix_input:
+  name: "vix"
+  key: "market:vix:current"
+  kind: "scalar_string"            # TODO: 실구조 확인
+  value_field: ""
+  ts_field: "ts_ms"
+  ts_unit: "ms"
+  stale_sec: 3600                   # 1시간 — VIX 는 분 단위 업데이트로 충분
+
+# 현재 DD 입력. userMemory 기준 ares:dtch:current_dd.
+dd_input:
+  name: "dd"
+  key: "ares:dtch:current_dd"
+  kind: "json"                      # TODO: 실구조 확인 (hash 가능성)
+  value_field: "dd"
+  ts_field: "ts_ms"
+  ts_unit: "ms"
+  stale_sec: 300
+
+# SPY 분봉에서 realized vol 자체 계산. 비활성 가능.
+spy:
+  enabled: true
+  price_key_pattern: "market:polygon:price:SPY"
+  price_field: "last_trade_price"
+  history_key: "addon:b03:spy_minute_prices"
+  window: 60
+  min_samples: 20
+
+# Scorer 파라미터 — 시장 경험에 기반한 기본값. 필요 시 조정.
+vix_x0: 22.0
+vix_k: 4.0
+rv_x0: 0.025
+rv_k: 0.006
+dd_x0: 0.05
+dd_k: 0.015
+
+# Policy
+min_scale: 0.2
+max_scale: 1.0
+
+# Runtime
+poll_interval_sec: 10
+heartbeat_interval_sec: 30
+recommendation_ttl_sec: 120
+
+log_level: "INFO"
+
+# 필수 유지: true. 관측 기간은 물론 그 이후에도 오래 관찰 후에만 false 고려.
+observe_only: true

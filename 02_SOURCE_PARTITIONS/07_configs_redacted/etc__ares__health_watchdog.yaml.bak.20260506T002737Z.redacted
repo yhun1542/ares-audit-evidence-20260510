@@ -1,0 +1,68 @@
+# ARES Unified Health Watchdog Config
+# Schema:
+#   guards:
+#     <pm2_name>:
+#       health_keys: [list of redis keys, first one found is used; optional]
+#       max_staleness_s: int  # if no health_keys or all missing, falls back to PM2 metrics
+#       max_pm2_restart_in_5m: int  # restart spike threshold
+#       severity: P0|P1|P2  # alarm severity if violated
+#
+# Fallback when no health_keys present or all stale:
+#   - PM2 status MUST be 'online'
+#   - PM2 uptime_ms >= 30000 (30s)
+#   - PM2 restart_time delta over last 5 min < max_pm2_restart_in_5m
+schema_version: "2026-05-06.health-watchdog.v1"
+defaults:
+  max_staleness_s: 90
+  max_pm2_restart_in_5m: 3
+  severity: P0
+guards:
+  rt-position-guard-v9:
+    health_keys: ["ctx:rt_guard:health"]
+    max_staleness_s: 90
+    parse_format: "json_ms:ts"  # JSON, 'ts' field in unix-time-ms
+    severity: P0
+  exposure-monitor:
+    severity: P0  # no health key; pm2-only
+  trade-actuator-supervisor:
+    health_keys: ["trade-actuator-supervisor:heartbeat"]
+    max_staleness_s: 60
+    parse_format: "ms_ts"  # raw value is unix-time-ms
+    severity: P0
+  kill-switch-authority:
+    health_keys: ["kill-switch-authority:heartbeat"]
+    max_staleness_s: 60
+    parse_format: "ms_ts"
+    severity: P0
+  ares-upstream-ssot-router:
+    health_keys: ["ares-upstream-ssot-router:health"]
+    max_staleness_s: 180
+    parse_format: "json:ts"  # JSON, 'ts' as unix-time-s
+    severity: P0
+  ssot-pipeline-guard:
+    severity: P0
+  realtime-data-feed-v3:
+    max_pm2_restart_in_5m: 5  # known to flap during market open
+    severity: P0
+  kis-balance-sync:
+    severity: P0
+  kis-token-service:
+    severity: P0
+  ssot-writer-v2:
+    severity: P0
+  xgb-riskflag-writer-v5:
+    severity: P1  # batch worker, not realtime
+  multi-source-regime-detector:
+    severity: P1
+  technical-indicator-writer-v2:
+    severity: P1
+  final-trade-gate:
+    severity: P0
+  go-nogo-judge-v2:
+    severity: P0
+  structural-integrity-guard:
+    severity: P0
+  ares-final-trade-gate-v50-active:
+    severity: P0
+  ares-final-trade-gate-v50-shadow:
+    severity: P1  # shadow mode is observational

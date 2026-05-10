@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_021232",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.836,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 39.196,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 13.038,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "1536026d0714"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.836,
+      "text": "## Next Commands (3 lines)\n\n```\nrun ost_v62_unified --signal-floor 0.001 --force-exposure\nsweep entry_threshold 0.01:0.10:0.01 --prune-degenerate\nvalidate checkpoint_01 --require-exposure-gt 0.05\n```\n\n**Rationale:** Current baseline is fully degenerate (0% exposure, all 19 folds degenerate). Priority is establishing *any* non-zero position-taking before optimization. The `--force-exposure` flag should lower thresholds enough to generate trades, sweep finds working entry range, validation gates against another degenerate submission.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 39.196,
+      "text": "The “champion” you handed off is effectively **not trading**:\n\n- **exposure_min/max: 0.0 / 0.0** ⇒ the strategy holds **0 position the entire time** (or the portfolio builder is forcing everything to cash).\n- **degenerate_folds: [1..19]** ⇒ nearly all CV folds are considered degenerate (commonly happens when there are no valid samples, no eligible assets, constant predictions, or the optimizer rejects all trades due to constraints).\n- **file:** is blank ⇒ the artifact/path to the saved model/run output wasn’t captured, so reproducibility is at risk.\n- **oos_mean / oos_min** in this state are often **not meaningful**, because a flat/no-trade strategy can produce misleading metrics depending on how you score (e.g., error vs. return metrics, normalization, etc.).\n\n## What to do next (diagnostics checklist)\n1. **Confirm portfolio construction isn’t blocking trades**\n   - Check constraints: max turnover, min holding, min signal threshold, leverage caps, liquidity filters, borrow availability, etc.\n   - If there’s a “trade only if |signal| > X” gate, X might be too high.\n\n2. **Check that the model actually produces non-constant predictions**\n   - Per fold: prediction mean/std, fraction of NaNs/inf, clipping.\n   - If predictions are all zeros (or all NaNs → filled with 0), you’ll get zero exposure.\n\n3. **Verify the label/target and feature availability per fold**\n   - Degenerate folds often mean: after filtering, there are **0 rows** left in that fold.\n   - Confirm the train/test date ranges and any “lookback warmup” logic aren’t wiping out whole folds.\n\n4. **Inspect universe eligibility filters**\n   - If your universe filter removes everything (price, volume, corporate actions, missing data rules), you’ll end up with nothing to trade.\n\n5. **Ensure costs/slippage assumptions aren’t making every trade invalid**\n   - Some optimizers “give up” if expected edge < costs for all names.\n\n## “Next Commands” (fill-in template)\nI don’t know your exact CLI, but here are three high-value “next commands” you can adapt (paste your actual tool names/flags and I’ll rewrite precisely):\n\n1) **Run a single fold with maximum debug logging**\n```bash\nrun_train --lane ost_v62_unified --run unified_baseline --fold 1 --log-level DEBUG --dump-intermediates\n```\n\n2) **Dump per-fold diagnostics: sample counts, prediction stats, eligibility counts**\n```bash\nrun_diagnostics --lane ost_v62_unified --run unified_baseline --report fold_stats,pred_stats,universe_stats,optimizer_rejections\n```\n\n3) **Force a “no-constraints” / “always-invested” sanity run to confirm plumbing**\n```bash\nrun_backtest --lane ost_v62_unified --run unified_baseline --constraints none --min_signal 0 --target_gross_exposure 1.0\n```\n\n## Two quick questions so I can give exact next commands\n1) What framework is this (internal runner name / repo / CLI entrypoint)?  \n2) What does “degenerate_folds” mean in your codebase (0 samples, constant preds, optimizer infeasible, etc.)?\n\nIf you paste the config for portfolio constraints + universe filters (or the fold diagnostic output), I can pinpoint the most likely blocker in one pass.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 13.038,
+      "text": "bet 0.05 20\nbet 0.10 21\nbet 0.15 22",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260105_053940",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 18.641,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 38.583,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 29.744,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 18.248,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "2fca0734bd6b"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 18.641,
+      "text": "## Handoff Acknowledged\n\n### Summary\n\n| Metric | Champion | Last PASS |\n|--------|----------|-----------|\n| Tuning Mean | **1.904** | 1.762 |\n| Tuning Min | **0.431** | 0.051 |\n| Lockbox Mean | 1.793 | **1.793** |\n| Lockbox Min | 1.134 | **1.347** |\n| Worst MDD | **-9.31%** | -11.18% |\n\n**Champion v5 holds** — the candidate showed improved lockbox minimum (1.35 vs 1.13) but significantly worse tuning minimum and drawdown characteristics.\n\n### Observations\n\n- ✅ No INCONCLUSIVE runs — clean state\n- ✅ 422 loops completed over ~46 hours — healthy throughput\n- ⚠️ ~2h10m remaining — approaching deadline\n- The `exp_macro_alpha_shadow` variant passed but didn't beat champion on risk-adjusted basis\n\n### Recommended Actions\n\nWith limited time remaining, the suggested commands are appropriate:\n\n```bash\n# Execute in order:\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\nGiven the time constraint, prioritize completing in-flight experiments over launching new high-variance candidates. The champion's worst MDD of -9.31% is solid — protect that.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 38.583,
+      "text": "### Status interpretation (what this handoff implies)\n\n**Champion (`champion_v5_latest.json`) is still the best overall tradeoff** given the numbers shown:\n\n- **Tuning (mean/min):** 1.904 / 0.431  \n  - Higher mean than the last PASS candidate, and *much* better minimum (less fragile).\n- **Lockbox (mean/min):** 1.793 / 1.134  \n  - Mean essentially tied with the last PASS candidate, but champion has a *worse* lockbox minimum than the candidate (1.134 vs 1.347). That’s the only clear “win” for the candidate.\n- **Drawdown:** champion is better  \n  - `fold14_mdd`: -0.0931 vs -0.0997 (candidate worse)  \n  - `worst_mdd`: -0.0931 vs -0.1118 (candidate materially worse)\n\n**Takeaway:** the last PASS candidate looks like a “safer lockbox tail” variant (better lockbox min), but it gives up robustness elsewhere (tuning min collapses, and worst drawdown worsens). Unless your selection rule prioritizes lockbox-min heavily, it shouldn’t replace the champion.\n\n---\n\n### What I’d do next (aligned to your “Next Commands”)\n\nRun exactly the three commands listed; they make sense in this situation:\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n**What to watch for in the outputs:**\n1. From `aub_autopilot --select-best`: confirm the selector isn’t overweighting **lockbox_min** such that it would accidentally promote the candidate despite clearly worse drawdown / tuning fragility.\n2. From `system_autopilot`: look for candidates that improve **worst_mdd** while keeping lockbox mean ≥ ~1.79 (since that seems to be your current plateau).\n3. From `aub_next_fix`: prioritize fixes targeting the failure mode suggested by the candidate:\n   - It likely introduced something that improves lockbox tail behavior but destabilizes tuning (tuning min ~0.05). The “next fix” should aim to keep the lockbox-min improvement **without** blowing up tuning min / MDD.\n\n---\n\n### Quick sanity check recommendation\nIf you have time before the runloop ends, add (or ensure you already have) a simple gate in selection logic like:\n\n- Reject if `worst_mdd < -0.10` (or whatever your policy threshold is), **even if lockbox_min is higher**.\n- Reject if `tuning_min < 0.25` (again, choose your threshold), to avoid “brittle” candidates.\n\nIf you paste the selector’s scoring formula (or the `--select-best` output), I can tell you whether it’s currently biased toward the candidate’s one advantage (lockbox min) and how to correct it.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 29.744,
+      "text": "**Handoff Received.**\n\nCurrent status confirmed:\n- **Champion**: `champion_v5_latest` remains dominant.\n  - **Strengths**: Solid Tuning Mean (~1.90) and Lockbox Mean (~1.79).\n  - **Constraint**: Worst MDD is -9.3% (Fold 14).\n- **Last Candidate**: `exp_macro_alpha_shadow` did not displace the champion.\n  - **Performance**: Comparable Lockbox Mean (~1.79) but significantly worse Worst MDD (-11.2%).\n- **Time Constraints**: ~2 hours remaining in the runloop.\n\n**Analysis & Recommendation**:\nSince the last candidate increased drawdown without significantly boosting the mean, future experiments in the final hours should prioritize **risk control** over aggressive alpha seeking. The focus should be on improving `fold14_mdd` specifically, as this is the binding constraint on the champion.\n\nSuggested tweaks for the next iteration:\n1. **Regime Filter tightening**: If the logic allows, slightly tighten the volatility or regime filters to reduce exposure during the specific market conditions of Fold 14.\n2. **Sizing reduction**: A global scaling down of position sizes (e.g., 0.9x multiplier) might improve MDD metrics linearly while keeping Sharpe/Sortino ratios intact, potentially improving the utility score if MDD penalty is high.\n\nReady for the next experiment generation or file input.",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 18.248,
+      "text": "### Status Summary\n- **Current Champion**: `baseline/champion_v5_latest.json` (strong performance: high tuning mean ~1.90, solid lockbox min ~1.13, MDD -0.093).\n- **Last PASS Candidate**: `baseline/candidate_20260102_155322_exp_macro_alpha_shadow.json` (comparable lockbox mean ~1.79 but weaker tuning min ~0.05 and worse MDD -0.111; passed initial filter but not overtaking champion).\n- **No Inconclusive Candidates**.\n- **Recommendation**: Champion holds due to superior risk-adjusted metrics (better MDD, higher floors in tuning/lockbox). Proceed with exploration for improvements.\n\n### Executing Next Commands (Simulated Output)\n*(Note: As an AI, I cannot execute real bash commands or access your filesystem. Below is a logical simulation based on typical outputs from such tools, assuming standard experiment system behavior. In a real env, run the commands directly.)*\n\n#### 1. `python3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best`\n```\n[2026-01-05 05:37:51] AUB Autopilot: Selecting best from registry...\n- Scanned 47 modules (e.g., macro_alpha_shadow, v5_baseline, exp_risk_adj).\n- Best selection: Retain `champion_v5_latest.json` (tuning_score=1.9038 > candidates).\n- New candidate generated: `candidate_20260105_053800_exp_macro_alpha_v6.json` (tweaked shadow alpha with MDD hedge).\n- Tuning queue updated: 3 jobs enqueued.\nRun complete. Best: champion_v5_latest.json\n```\n\n#### 2. `python3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run`\n```\n[2026-01-05 05:38:10] System Autopilot: Running candidate pipeline...\n- Loaded spec: 12 candidates (incl. last PASS).\n- Evaluated 4 new folds (13-16): Champion MDD improves to -0.091 avg.\n- Promoted 1 candidate to lockbox: `candidate_20260105_053800_exp_macro_alpha_v6.json` (lockbox_mean/min: 1.805 / 1.22).\n- Failed 2 (high MDD > -0.10 threshold).\n- Next spec update: Add risk-parity mixer.\nPipeline complete. Elapsed: 45s.\n```\n\n#### 3. `python3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md`\n**Generated File: `baseline/reports/next_fix.md`**\n```markdown\n# Next Fix Report (2026-01-05 05:38:55)\n\n## Diagnostics\n- **Pain Points**: Candidate tuning_min too volatile (0.05 vs champion 0.43). MDD degradation in fold14+.\n- **Root Causes**: Shadow alpha overfits macro signals; insufficient vol targeting.\n\n## Proposed Fixes (Prioritized)\n1. **High Priority**: Integrate MDD hedge (e.g., `risk_adj_v2` module) → Target worst_mdd < -0.085.\n2. **Medium**: Blend champion_v5 with new v6 shadow (alpha=0.7) → Boost lockbox_min >1.25.\n3. **Low**: Expand registry with `parity_mixer` for fold robustness.\n\n## Actionable Commands\n```bash\npython3 experiment_system/tools/aub_autopilot.py --fix mdd_hedge --run\ngit commit -m \"Post-loop 422: v6 candidate + fixes\"\n```\n\nEstimated Impact: +0.02 tuning_mean, -0.008 MDD.\n```\n\n### Updated Runloop Projection\n- **New Elapsed**: ~1 day, 21:50:30\n- **Remaining**: ~2:09:30 (adjusted for queue).\n- **Loop Count**: 423 (post-execution).\n- **Next Update**: 2026-01-05 05:40:00 expected.\n\n**Ready for handoff. Run commands live for real execution. Any overrides or analysis needed?**",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260105_162359",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.885,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 23.169,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 33.691,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 15.177,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "9f3e2319755f"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.885,
+      "text": "# AUB HANDOFF Analysis\n\n## Assessment\n\n| Metric | Value | Status |\n|--------|-------|--------|\n| OOS Mean | 1.8815 | ✅ Strong (>1.5) |\n| OOS Min | 0.4315 | ⚠️ Weak fold (<1.0) |\n| Exposure Range | 47-84% | ✅ Acceptable |\n| Degenerate Folds | 0 | ✅ Clean |\n\n**Primary Concern:** OOS min at 0.43 indicates at least one fold significantly underperforming. Gap between mean (1.88) and min (0.43) suggests possible overfitting or regime sensitivity.\n\n---\n\n## Next Commands (3 lines)\n\n```\naub continue --lane 21b5700bf9943671 --constraint oos_min>=0.8 --generations 50\naub analyze-folds --run db08d79b484756ab --export-weak\naub branch --from db08d79b484756ab --regularization +0.15 --target fold_consistency\n```\n\n---\n\n## Rationale\n\n1. **continue**: Tighten oos_min constraint to force more robust solutions across all folds\n2. **analyze-folds**: Diagnose which fold(s) are weak and extract for manual review\n3. **branch**: Fork with increased regularization to reduce mean/min gap and improve generalization",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 23.169,
+      "text": "I can generate the “Next Commands”, but I’m missing the command/CLI format and what knobs you want to search next (model family, features, constraints, etc.). Right now the handoff tells me the champion metrics, but not *how* you run new candidates.\n\nTo proceed, tell me one of these:\n\n1) **What tool/CLI is this?** (e.g., `aub run ...`, `make lane ...`, `python train.py ...`, etc.)  \n2) **What are the allowed next actions?** (examples: “spawn N new lanes”, “increase CV folds”, “tighten exposure bounds”, “compute worst_mdd”, “rerun with new seed”, “feature sweep”)  \n3) **What’s the primary objective?** (maximize `oos_mean` only, or penalize exposure / drawdown / variance?)\n\nIf you just want sensible *content* for the next 3 actions (independent of exact syntax), these are the three I’d recommend based on the handoff:\n\n1) **Compute/enable `worst_mdd` for the champion and top-K runners-up** (it’s `None`, so you may be selecting without drawdown control).  \n2) **Run a robustness check:** rerun the champion across multiple random seeds / different CV splits and confirm `degenerate_folds` stays empty and `oos_mean` is stable.  \n3) **Constrain or sweep exposure:** since exposure ranges ~0.47–0.84, run a sweep with tighter exposure caps (e.g., max 0.70–0.75) and see if `oos_mean` holds while reducing risk.\n\nReply with the expected command template (even a single example command), and I’ll output the exact “Next Commands” in the required 3-line format.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 33.691,
+      "text": "python train.py --lane 21b5700bf9943671 --resume db08d79b484756ab --mode exploit\npython train.py --lane 21b5700bf9943671 --resume db08d79b484756ab --mode explore --mutation_rate 0.02\npython train.py --lane 21b5700bf9943671 --resume db08d79b484756ab --mode stabilize --regularization 1.1",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 15.177,
+      "text": "run_lane --seed 123 --strategy mutate:db08d79b484756ab --folds 10\nrun_lane --seed 456 --strategy ensemble:21b5700bf9943671 --exposure_cap 0.8\nrun_lane --seed 789 --strategy boost:oos_mean>1.9 --mdd_target -0.1",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

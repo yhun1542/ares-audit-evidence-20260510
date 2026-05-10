@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260108_174451",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 12.811,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 38.595,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 8.991,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "5560a6c9d6f7"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 12.811,
+      "text": "# AUB Handoff Acknowledged\n\n## Status Assessment\n\n| Metric | Value | Status |\n|--------|-------|--------|\n| OOS Mean | 1.8815 | ✅ Solid |\n| OOS Min | 0.4315 | ✅ Positive |\n| Exposure Range | 47.5% - 84.4% | ✅ Acceptable |\n| Degenerate Folds | 0 | ✅ Clean |\n| Loops Completed | 316 | — |\n| Time Remaining | ~14h | — |\n\n## Notes\n- Champion file field is empty - verify champion persistence\n- No MDD recorded (None) - may need investigation\n- System running nominally with ~14 hours remaining\n\n## Next Commands\n```\nCONTINUE\n```\n\n---\n\n*Runloop healthy. Champion metrics acceptable. Continuing search.*",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 38.595,
+      "text": "What you pasted looks like an automated “AUB runloop” handoff snapshot. Here’s what it says and the immediate things I’d verify/decide next.\n\n## What the snapshot indicates\n\n**Current champion**\n- **file:** *(blank)*  \n  This is the only obvious red flag: the run believes there is a “current champion”, but it isn’t pointing to an artifact path/filename. That can be benign (logging bug) or a real issue (not saving/recording the champion).\n- **oos_mean:** `1.8815`  \n- **oos_min:** `0.4315`  \n  You’re tracking out-of-sample performance across folds/windows; mean is strong relative to the minimum, but the minimum is low enough that you likely still have a “bad fold” risk.\n- **worst_mdd:** `None`  \n  Either MDD wasn’t computed, wasn’t applicable, or failed to log. If MDD is a gating metric, this needs to be fixed before trusting the champion.\n- **exposure_min/max:** `0.4746 / 0.8442`  \n  Exposure never goes near 0 or 1; it stays moderately/highly invested. If you expect a strategy that can de-risk more aggressively, you might want constraints/penalties or different features/objective.\n- **degenerate_folds:** `[]`  \n  Good: no folds flagged as degenerate (e.g., constant predictions, NaNs, no trades, etc.).\n- **lane_hash / run_hash:** identifiers for reproducibility.\n\n**Runloop status**\n- Started 2026-01-07 07:49:10\n- Elapsed ~1 day 9h 54m\n- Remaining ~14h 05m\n- Loop count 316  \n  So you’re mid-run and still iterating.\n\n## High-priority checks (in order)\n\n1. **Why is `file:` blank?**\n   - Confirm whether the champion artifact is actually saved somewhere (model pickle, config json, metrics report).\n   - If you have a run directory keyed by `run_hash=db08d79b...`, check for “best”, “champion”, or “topk” artifacts and ensure the logger is writing the path.\n\n2. **Is `worst_mdd=None` expected?**\n   - If MDD is required, re-run the metric computation or fix the evaluation step so MDD always logs.\n   - If MDD is optional, consider still computing it—strategies with decent OOS means can hide ugly tails.\n\n3. **Interpret `oos_min=0.431`**\n   - Identify which fold/window produced the minimum.\n   - Compare that fold’s market regime, sample size, and exposure path; see if failure is regime-specific or data-quality-related.\n\n4. **Exposure range sanity**\n   - If you want lower exposure in bad regimes, consider:\n     - adding a cash/flat option in the policy,\n     - increasing penalty for drawdowns/volatility,\n     - adding features signaling regime/vol,\n     - tightening max exposure or adding turnover/exposure smoothness constraints (depending on your framework).\n\n## What I need from you to give precise “next commands”\nYour handoff says “Next Commands (3 lines)” but they’re empty. Tell me one of:\n1) the intended next step in your workflow (e.g., “promote champion”, “resume runloop”, “run eval report”, “export model”), or  \n2) paste the CLI you usually use (or the runloop script name), or  \n3) paste one more block that includes paths (run directory, experiment name, artifact layout).\n\nIf you share the repo’s standard command pattern, I can propose the exact next 3 command lines (e.g., evaluate champion, compute MDD, save/export, generate report, or resume).",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 8.991,
+      "text": "### Summary of Current Champion\n- **Performance**: Strong out-of-sample (OOS) metrics with mean return of **1.88%** (min: 0.43%). No worst MDD reported (positive sign).\n- **Risk Profile**: Exposure bounded between **47.5%** and **84.4%** – reasonably controlled, avoiding over-leverage.\n- **Stability**: No degenerate folds detected. Versioned consistently (lane: `21b5700bf9943671`, run: `db08d79b484756ab`).\n- **File**: No attached file specified – recommend uploading for deeper review.\n\n### Runloop Overview\n- **Uptime**: ~1 day 10 hours (316 loops completed).\n- **Progress**: ~86% done (14 hours remaining as of last update).\n- **Health**: Steady operation since 2026-01-07. Monitor for any loop stalls.\n\n## Recommendations\n1. **Validate Champion**: Backtest the champion on unseen data. Check for overfitting via OOS min (0.43% is solid but watch for variance).\n2. **Optimize Exposure**: Tighten max exposure <80% if scaling to live trading to cap drawdowns.\n3. **Next Steps**: \n   - Archive current champion.\n   - Ramp up loop count target or introduce new features (e.g., vol targeting).\n   - If this is AUB (AutoML/UB framework), trigger a diversity injection if folds homogenize.\n\n## Suggested Next Commands (3 lines)\n```\ncandidate_submit champion_file_path --validate_oos\nexposure_adjust --max 0.80 --min 0.50\nloop_advance --target_loops 500 --inject_diversity 0.1\n```\n\nWhat’s the goal of this runloop (e.g., equity curve target, specific market)? Share the champion file or logs for more tailored advice! 🚀",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

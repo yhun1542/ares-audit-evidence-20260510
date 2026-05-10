@@ -1,0 +1,1165 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+RAM26 Alpha Engine v1
+====================
+
+Purpose
+-------
+Generate RAM26 target weights from fresh alpha features and publish them through a
+strict, fail-closed contract that is compatible with the v4 Sleeve-Primary/Bridge
+repair path.
+
+Design invariants
+-----------------
+1. No 1/N fallback. If the signal is flat, stale, missing, or unsafe, the engine
+   refuses to publish tradeable targets.
+2. Preserve alpha dispersion. Output targets must pass CV/unique-weight guards.
+3. Safe by default. The engine writes RAM26 staging keys by default and never
+   writes ssot:target:v2:current unless explicitly unlocked.
+4. No broker orders. This file only emits target JSON; order execution must remain
+   downstream and separately gated.
+
+Typical commands
+----------------
+# One-shot Redis read -> RAM26 output key
+python3 Ram26_alpha_engine_v1.py --once --publish-redis
+
+# PM2/service loop
+python3 Ram26_alpha_engine_v1.py --loop --publish-redis --cycle-sec 5
+
+# Local file dry-run
+python3 Ram26_alpha_engine_v1.py --once --input-json features.json --output-json out.json --no-strict-freshness
+
+# Deterministic self-test
+python3 Ram26_alpha_engine_v1.py --self-test
+
+Expected Redis input formats
+----------------------------
+The engine accepts either of these forms at RAM26_FEATURES_KEY:
+
+1) Redis HASH
+   key:   ram26:features:v1
+   field: <symbol>
+   value: JSON object containing features
+
+2) Redis STRING
+   key:   ram26:features:v1
+   value: JSON list/dict with feature records
+
+Supported feature aliases include ret_5d/mom_5d, ret_20d/mom_20d,
+ret_60d/mom_60d, vol_20d/volatility_20d, quality/quality_score,
+value/value_score, liquidity/liquidity_score, sentiment/sentiment_score,
+drawdown_20d/max_drawdown_20d, spread_bps, updated_at_ms.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import os
+import signal
+import sys
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
+
+ENGINE_ID = "ram26_alpha_engine_v1"
+SCHEMA_VERSION = "ram26.alpha.targets.v1"
+BRIDGE_CONTRACT_NAME = "ARES-RAM26-SLEEVE-PRIMARY"
+BRIDGE_CONTRACT_VERSION = "v4-compatible"
+
+
+# ---------------------------------------------------------------------------
+# Small utilities
+# ---------------------------------------------------------------------------
+
+
+def now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def getenv_str(name: str, default: str) -> str:
+    value = os.getenv(name)
+    return default if value is None or value == "" else value
+
+
+def getenv_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def getenv_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return float(raw)
+
+
+def getenv_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return int(raw)
+
+
+def decode_redis(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return value
+
+
+def json_dumps(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def compact_float(value: float, ndigits: int = 10) -> float:
+    # Avoid -0.0 and excessive JSON noise.
+    rounded = round(float(value), ndigits)
+    if abs(rounded) < 10 ** (-(ndigits - 1)):
+        return 0.0
+    return rounded
+
+
+def safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return float(value)
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return default
+    if math.isnan(result) or math.isinf(result):
+        return default
+    return result
+
+
+def safe_int(value: Any, default: Optional[int] = None) -> Optional[int]:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def mean(values: Sequence[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def population_std(values: Sequence[float]) -> float:
+    if not values:
+        return 0.0
+    mu = mean(values)
+    return math.sqrt(sum((x - mu) ** 2 for x in values) / len(values))
+
+
+def coeff_var_abs(weights: Sequence[float]) -> float:
+    values = [abs(x) for x in weights if abs(x) > 0]
+    if not values:
+        return 0.0
+    mu = mean(values)
+    if mu <= 0:
+        return 0.0
+    return population_std(values) / mu
+
+
+def rounded_unique_count(values: Sequence[float], ndigits: int = 6) -> int:
+    return len({round(abs(x), ndigits) for x in values if abs(x) > 0})
+
+
+def robust_zscores(values: Sequence[float]) -> Tuple[List[float], float]:
+    """Return z-scores and the raw population std.
+
+    Standard z-scores are intentional here. The engine separately fails closed
+    when dispersion is too low, so this function must never fabricate a signal.
+    """
+    if not values:
+        return [], 0.0
+    mu = mean(values)
+    sd = population_std(values)
+    if sd < 1e-12:
+        return [0.0 for _ in values], sd
+    return [(x - mu) / sd for x in values], sd
+
+
+def percentile(values: Sequence[float], q: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    pos = (len(ordered) - 1) * min(max(q, 0.0), 1.0)
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return ordered[lo]
+    frac = pos - lo
+    return ordered[lo] * (1 - frac) + ordered[hi] * frac
+
+
+def sha256_12(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def eprint(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EngineConfig:
+    redis_url: str = field(default_factory=lambda: getenv_str("RAM26_REDIS_URL", "redis://127.0.0.1:6379/0"))
+    universe_key: str = field(default_factory=lambda: getenv_str("RAM26_UNIVERSE_KEY", "ram26:universe:v1"))
+    features_key: str = field(default_factory=lambda: getenv_str("RAM26_FEATURES_KEY", "ram26:features:v1"))
+    output_key: str = field(default_factory=lambda: getenv_str("RAM26_OUTPUT_KEY", "ram26:alpha:targets:v1:latest"))
+    stream_key: str = field(default_factory=lambda: getenv_str("RAM26_STREAM_KEY", "ram26:alpha:targets:v1:stream"))
+    heartbeat_key: str = field(default_factory=lambda: getenv_str("RAM26_HEARTBEAT_KEY", "ram26:alpha:engine:v1:heartbeat"))
+    ssot_staged_key: str = field(default_factory=lambda: getenv_str("RAM26_SSOT_STAGED_KEY", "ram26:ssot:target:v2:staged"))
+    ssot_current_key: str = field(default_factory=lambda: getenv_str("RAM26_SSOT_CURRENT_KEY", "ssot:target:v2:current"))
+    trading_enabled_key: str = field(default_factory=lambda: getenv_str("RAM26_TRADING_ENABLED_KEY", "trading:enabled"))
+    mode_key: str = field(default_factory=lambda: getenv_str("RAM26_MODE_KEY", "mode"))
+
+    target_gross: float = field(default_factory=lambda: getenv_float("RAM26_TARGET_GROSS", 0.75))
+    max_weight: float = field(default_factory=lambda: getenv_float("RAM26_MAX_WEIGHT", 0.12))
+    min_active: int = field(default_factory=lambda: getenv_int("RAM26_MIN_ACTIVE", 4))
+    min_cv: float = field(default_factory=lambda: getenv_float("RAM26_MIN_CV", 0.30))
+    min_unique_weights: int = field(default_factory=lambda: getenv_int("RAM26_MIN_UNIQUE_WEIGHTS", 4))
+    active_fraction: float = field(default_factory=lambda: getenv_float("RAM26_ACTIVE_FRACTION", 0.70))
+    softmax_beta: float = field(default_factory=lambda: getenv_float("RAM26_SOFTMAX_BETA", 1.15))
+    gross_tolerance: float = field(default_factory=lambda: getenv_float("RAM26_GROSS_TOLERANCE", 0.0005))
+
+    max_spread_bps: float = field(default_factory=lambda: getenv_float("RAM26_MAX_SPREAD_BPS", 250.0))
+    min_liquidity_score: float = field(default_factory=lambda: getenv_float("RAM26_MIN_LIQUIDITY_SCORE", -999.0))
+    feature_max_age_sec: int = field(default_factory=lambda: getenv_int("RAM26_FEATURE_MAX_AGE_SEC", 900))
+    ttl_sec: int = field(default_factory=lambda: getenv_int("RAM26_OUTPUT_TTL_SEC", 60))
+    cycle_sec: float = field(default_factory=lambda: getenv_float("RAM26_CYCLE_SEC", 5.0))
+    strict_freshness: bool = field(default_factory=lambda: getenv_bool("RAM26_STRICT_FRESHNESS", True))
+
+    publish_redis: bool = field(default_factory=lambda: getenv_bool("RAM26_PUBLISH_REDIS", False))
+    publish_ssot_staged: bool = field(default_factory=lambda: getenv_bool("RAM26_PUBLISH_SSOT_STAGED", False))
+    publish_ssot_current: bool = field(default_factory=lambda: getenv_bool("RAM26_PUBLISH_SSOT_CURRENT", False))
+    allow_current_ssot_write: bool = field(default_factory=lambda: getenv_bool("RAM26_ALLOW_CURRENT_SSOT_WRITE", False))
+    allow_live_ssot_write: bool = field(default_factory=lambda: getenv_bool("RAM26_ALLOW_LIVE_SSOT_WRITE", False))
+
+    input_json: Optional[str] = None
+    output_json: Optional[str] = None
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace) -> "EngineConfig":
+        base = cls()
+        updates: Dict[str, Any] = {}
+        for attr in (
+            "redis_url",
+            "universe_key",
+            "features_key",
+            "output_key",
+            "stream_key",
+            "heartbeat_key",
+            "ssot_staged_key",
+            "ssot_current_key",
+            "target_gross",
+            "max_weight",
+            "min_active",
+            "min_cv",
+            "min_unique_weights",
+            "active_fraction",
+            "softmax_beta",
+            "feature_max_age_sec",
+            "ttl_sec",
+            "cycle_sec",
+            "input_json",
+            "output_json",
+        ):
+            value = getattr(args, attr, None)
+            if value is not None:
+                updates[attr] = value
+
+        # Boolean CLI flags override environment only when supplied.
+        if args.publish_redis:
+            updates["publish_redis"] = True
+        if args.publish_ssot_staged:
+            updates["publish_ssot_staged"] = True
+        if args.publish_ssot_current:
+            updates["publish_ssot_current"] = True
+        if args.allow_current_ssot_write:
+            updates["allow_current_ssot_write"] = True
+        if args.allow_live_ssot_write:
+            updates["allow_live_ssot_write"] = True
+        if args.strict_freshness:
+            updates["strict_freshness"] = True
+        if args.no_strict_freshness:
+            updates["strict_freshness"] = False
+
+        return EngineConfig(**{**base.__dict__, **updates})
+
+    def validate(self) -> None:
+        if not (0 < self.target_gross <= 1.5):
+            raise ValueError(f"invalid target_gross={self.target_gross}")
+        if not (0 < self.max_weight <= self.target_gross):
+            raise ValueError(f"invalid max_weight={self.max_weight}")
+        if self.min_active < 1:
+            raise ValueError("min_active must be >= 1")
+        if self.min_cv < 0:
+            raise ValueError("min_cv must be >= 0")
+        if self.min_unique_weights < 1:
+            raise ValueError("min_unique_weights must be >= 1")
+        if not (0 < self.active_fraction <= 1):
+            raise ValueError("active_fraction must be in (0, 1]")
+        if self.softmax_beta <= 0:
+            raise ValueError("softmax_beta must be > 0")
+
+        minimum_positions_for_cap = math.ceil(self.target_gross / self.max_weight)
+        if self.min_active < minimum_positions_for_cap:
+            # Not an error. The constructor will auto-raise active count. This log is useful for ops.
+            eprint(
+                f"[RAM26_CONFIG_NOTE] min_active={self.min_active} is below cap-implied minimum "
+                f"{minimum_positions_for_cap}; engine will require at least {minimum_positions_for_cap} active names"
+            )
+
+        if self.publish_ssot_current and not self.allow_current_ssot_write:
+            raise ValueError(
+                "publish_ssot_current requires --allow-current-ssot-write. "
+                "Default behavior intentionally avoids ssot:target:v2:current."
+            )
+
+
+# ---------------------------------------------------------------------------
+# Feature records
+# ---------------------------------------------------------------------------
+
+
+FLOAT_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "ret_1d": ("ret_1d", "return_1d", "mom_1d", "momentum_1d"),
+    "ret_5d": ("ret_5d", "return_5d", "mom_5d", "momentum_5d"),
+    "ret_20d": ("ret_20d", "return_20d", "mom_20d", "momentum_20d"),
+    "ret_60d": ("ret_60d", "return_60d", "mom_60d", "momentum_60d"),
+    "vol_20d": ("vol_20d", "volatility_20d", "risk_20d", "sigma_20d"),
+    "vol_60d": ("vol_60d", "volatility_60d", "risk_60d", "sigma_60d"),
+    "quality": ("quality", "quality_score", "q_score"),
+    "value": ("value", "value_score", "v_score"),
+    "liquidity": ("liquidity", "liquidity_score", "liq_score", "adv_score"),
+    "sentiment": ("sentiment", "sentiment_score", "news_score"),
+    "drawdown_20d": ("drawdown_20d", "max_drawdown_20d", "mdd_20d"),
+    "spread_bps": ("spread_bps", "bid_ask_spread_bps", "spread"),
+    "price": ("price", "last", "last_price", "close", "close_price"),
+}
+
+SYMBOL_ALIASES = ("symbol", "ticker", "code", "asset", "instrument")
+UPDATED_AT_ALIASES = ("updated_at_ms", "features_updated_at_ms", "ts_ms", "timestamp_ms", "generated_at_ms")
+
+
+@dataclass
+class FeatureRecord:
+    symbol: str
+    raw: Dict[str, Any]
+    ret_1d: float = 0.0
+    ret_5d: float = 0.0
+    ret_20d: float = 0.0
+    ret_60d: float = 0.0
+    vol_20d: float = 0.0
+    vol_60d: float = 0.0
+    quality: float = 0.0
+    value: float = 0.0
+    liquidity: float = 0.0
+    sentiment: float = 0.0
+    drawdown_20d: float = 0.0
+    spread_bps: float = 0.0
+    price: Optional[float] = None
+    updated_at_ms: Optional[int] = None
+    eligible: bool = True
+    reject_reason: Optional[str] = None
+
+    @staticmethod
+    def _get_float(data: Mapping[str, Any], aliases: Sequence[str], default: float = 0.0) -> float:
+        for key in aliases:
+            if key in data:
+                value = safe_float(data.get(key), None)
+                if value is not None:
+                    return value
+        return default
+
+    @staticmethod
+    def _get_optional_float(data: Mapping[str, Any], aliases: Sequence[str]) -> Optional[float]:
+        for key in aliases:
+            if key in data:
+                value = safe_float(data.get(key), None)
+                if value is not None:
+                    return value
+        return None
+
+    @staticmethod
+    def _get_symbol(data: Mapping[str, Any], fallback_symbol: Optional[str] = None) -> Optional[str]:
+        for key in SYMBOL_ALIASES:
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return fallback_symbol
+
+    @staticmethod
+    def _get_updated_at_ms(data: Mapping[str, Any]) -> Optional[int]:
+        for key in UPDATED_AT_ALIASES:
+            value = safe_int(data.get(key), None)
+            if value is not None:
+                # Accept seconds timestamps and convert to ms when clearly needed.
+                if 1_000_000_000 <= value < 10_000_000_000:
+                    return value * 1000
+                return value
+        return None
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any], fallback_symbol: Optional[str] = None) -> "FeatureRecord":
+        symbol = cls._get_symbol(data, fallback_symbol)
+        if not symbol:
+            raise ValueError(f"feature record missing symbol: {data}")
+        record = cls(
+            symbol=symbol,
+            raw=dict(data),
+            ret_1d=cls._get_float(data, FLOAT_ALIASES["ret_1d"]),
+            ret_5d=cls._get_float(data, FLOAT_ALIASES["ret_5d"]),
+            ret_20d=cls._get_float(data, FLOAT_ALIASES["ret_20d"]),
+            ret_60d=cls._get_float(data, FLOAT_ALIASES["ret_60d"]),
+            vol_20d=cls._get_float(data, FLOAT_ALIASES["vol_20d"]),
+            vol_60d=cls._get_float(data, FLOAT_ALIASES["vol_60d"]),
+            quality=cls._get_float(data, FLOAT_ALIASES["quality"]),
+            value=cls._get_float(data, FLOAT_ALIASES["value"]),
+            liquidity=cls._get_float(data, FLOAT_ALIASES["liquidity"]),
+            sentiment=cls._get_float(data, FLOAT_ALIASES["sentiment"]),
+            drawdown_20d=cls._get_float(data, FLOAT_ALIASES["drawdown_20d"]),
+            spread_bps=cls._get_float(data, FLOAT_ALIASES["spread_bps"]),
+            price=cls._get_optional_float(data, FLOAT_ALIASES["price"]),
+            updated_at_ms=cls._get_updated_at_ms(data),
+        )
+
+        raw_eligible = data.get("eligible", True)
+        if isinstance(raw_eligible, str):
+            record.eligible = raw_eligible.strip().lower() not in {"0", "false", "no", "n"}
+        else:
+            record.eligible = bool(raw_eligible)
+
+        if data.get("halted") or data.get("suspended") or data.get("blocked"):
+            record.eligible = False
+            record.reject_reason = "halted_or_blocked"
+        return record
+
+    def apply_risk_filters(self, cfg: EngineConfig, ts_ms: int) -> None:
+        if not self.eligible:
+            if self.reject_reason is None:
+                self.reject_reason = "ineligible_flag"
+            return
+
+        if self.price is not None and self.price <= 0:
+            self.eligible = False
+            self.reject_reason = "non_positive_price"
+            return
+
+        if self.spread_bps > cfg.max_spread_bps:
+            self.eligible = False
+            self.reject_reason = f"spread_bps>{cfg.max_spread_bps}"
+            return
+
+        if self.liquidity < cfg.min_liquidity_score:
+            self.eligible = False
+            self.reject_reason = f"liquidity<{cfg.min_liquidity_score}"
+            return
+
+        if cfg.strict_freshness:
+            if self.updated_at_ms is None:
+                self.eligible = False
+                self.reject_reason = "missing_updated_at_ms"
+                return
+            age_sec = max(0.0, (ts_ms - self.updated_at_ms) / 1000.0)
+            if age_sec > cfg.feature_max_age_sec:
+                self.eligible = False
+                self.reject_reason = f"stale_features_age_sec={round(age_sec, 1)}"
+                return
+
+
+# ---------------------------------------------------------------------------
+# Feature loading
+# ---------------------------------------------------------------------------
+
+
+def normalize_feature_payload(payload: Any) -> List[FeatureRecord]:
+    records: List[FeatureRecord] = []
+
+    if isinstance(payload, list):
+        for item in payload:
+            if not isinstance(item, Mapping):
+                raise ValueError("feature list must contain JSON objects")
+            records.append(FeatureRecord.from_mapping(item))
+        return records
+
+    if isinstance(payload, Mapping):
+        # Common wrappers.
+        for wrapper_key in ("features", "records", "data", "symbols"):
+            wrapped = payload.get(wrapper_key)
+            if isinstance(wrapped, list):
+                return normalize_feature_payload(wrapped)
+
+        # Either {"005930": {...}} or a single record with symbol.
+        if any(k in payload for k in SYMBOL_ALIASES):
+            return [FeatureRecord.from_mapping(payload)]
+
+        for symbol, value in payload.items():
+            if isinstance(value, Mapping):
+                records.append(FeatureRecord.from_mapping(value, fallback_symbol=str(symbol)))
+            else:
+                raise ValueError(f"feature map value for {symbol!r} must be object")
+        return records
+
+    raise ValueError("unsupported feature payload format")
+
+
+def load_features_from_file(path: str) -> List[FeatureRecord]:
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    return normalize_feature_payload(payload)
+
+
+def import_redis_module() -> Any:
+    try:
+        import redis  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "redis package is required for Redis mode. Install redis-py or use --input-json for file mode."
+        ) from exc
+    return redis
+
+
+def connect_redis(redis_url: str) -> Any:
+    redis = import_redis_module()
+    client = redis.Redis.from_url(redis_url, socket_timeout=3, socket_connect_timeout=3)
+    client.ping()
+    return client
+
+
+def load_features_from_redis(client: Any, cfg: EngineConfig) -> List[FeatureRecord]:
+    key_type_raw = client.type(cfg.features_key)
+    key_type = decode_redis(key_type_raw)
+
+    if key_type == "none":
+        raise RuntimeError(f"features key does not exist: {cfg.features_key}")
+
+    if key_type == "hash":
+        raw_map = client.hgetall(cfg.features_key)
+        decoded: Dict[str, Any] = {}
+        for raw_symbol, raw_json in raw_map.items():
+            symbol = decode_redis(raw_symbol)
+            value_text = decode_redis(raw_json)
+            value = json.loads(value_text)
+            if not isinstance(value, Mapping):
+                raise ValueError(f"hash field {symbol!r} must contain a JSON object")
+            decoded[symbol] = value
+        return normalize_feature_payload(decoded)
+
+    if key_type == "string":
+        raw = client.get(cfg.features_key)
+        if raw is None:
+            raise RuntimeError(f"features key is empty: {cfg.features_key}")
+        return normalize_feature_payload(json.loads(decode_redis(raw)))
+
+    raise RuntimeError(f"unsupported Redis type for {cfg.features_key}: {key_type}")
+
+
+# ---------------------------------------------------------------------------
+# Alpha and portfolio construction
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ScoredRecord:
+    record: FeatureRecord
+    score: float
+    components: Dict[str, float]
+
+
+@dataclass
+class EngineResult:
+    ok: bool
+    payload: Dict[str, Any]
+    reason: Optional[str] = None
+
+
+class FailClosed(Exception):
+    """Raised when the engine must refuse to publish tradeable targets."""
+
+
+def vector(records: Sequence[FeatureRecord], attr: str) -> List[float]:
+    return [float(getattr(record, attr)) for record in records]
+
+
+def score_records(records: Sequence[FeatureRecord]) -> Tuple[List[ScoredRecord], Dict[str, Any]]:
+    if not records:
+        raise FailClosed("no_eligible_records")
+
+    attrs = [
+        "ret_1d",
+        "ret_5d",
+        "ret_20d",
+        "ret_60d",
+        "vol_20d",
+        "vol_60d",
+        "quality",
+        "value",
+        "liquidity",
+        "sentiment",
+        "drawdown_20d",
+    ]
+
+    zmap: Dict[str, List[float]] = {}
+    stdmap: Dict[str, float] = {}
+    for attr in attrs:
+        z, sd = robust_zscores(vector(records, attr))
+        zmap[attr] = z
+        stdmap[attr] = sd
+
+    # Composite model. The exact weights are intentionally simple and explicit.
+    # Negative risk terms penalize high volatility and deep drawdown. If drawdown is
+    # stored as a negative number, abs(drawdown) is used before z-scoring below.
+    abs_dd_values = [abs(r.drawdown_20d) for r in records]
+    z_dd_abs, sd_dd_abs = robust_zscores(abs_dd_values)
+    stdmap["abs_drawdown_20d"] = sd_dd_abs
+
+    scored: List[ScoredRecord] = []
+    for i, record in enumerate(records):
+        components = {
+            "mom_1d": 0.05 * zmap["ret_1d"][i],
+            "mom_5d": 0.10 * zmap["ret_5d"][i],
+            "mom_20d": 0.28 * zmap["ret_20d"][i],
+            "mom_60d": 0.18 * zmap["ret_60d"][i],
+            "quality": 0.14 * zmap["quality"][i],
+            "value": 0.08 * zmap["value"][i],
+            "sentiment": 0.07 * zmap["sentiment"][i],
+            "liquidity": 0.05 * zmap["liquidity"][i],
+            "vol_penalty_20d": -0.16 * zmap["vol_20d"][i],
+            "vol_penalty_60d": -0.06 * zmap["vol_60d"][i],
+            "drawdown_penalty": -0.10 * z_dd_abs[i],
+        }
+        score = sum(components.values())
+        scored.append(ScoredRecord(record=record, score=score, components=components))
+
+    raw_scores = [item.score for item in scored]
+    score_std = population_std(raw_scores)
+    score_cv = coeff_var_abs(raw_scores)
+    meta = {
+        "feature_std": {k: compact_float(v, 8) for k, v in stdmap.items()},
+        "score_std": compact_float(score_std, 8),
+        "score_cv_abs": compact_float(score_cv, 8),
+    }
+    if score_std < 1e-10:
+        raise FailClosed("flat_alpha_score_std")
+
+    return scored, meta
+
+
+def select_active(scored: Sequence[ScoredRecord], cfg: EngineConfig) -> List[ScoredRecord]:
+    if not scored:
+        raise FailClosed("no_scored_records")
+
+    ordered = sorted(scored, key=lambda x: (x.score, x.record.symbol), reverse=True)
+    n = len(ordered)
+    cap_min = math.ceil(cfg.target_gross / cfg.max_weight)
+    required_min = max(cfg.min_active, cap_min)
+    fractional = max(required_min, int(math.ceil(n * cfg.active_fraction)))
+    active_count = min(n, fractional)
+
+    if active_count < required_min:
+        raise FailClosed(f"insufficient_active_after_cap_requirement active={active_count} required={required_min}")
+
+    selected = ordered[:active_count]
+
+    # Refuse to manufacture a long book when every selected alpha is non-positive.
+    if max(item.score for item in selected) <= 0:
+        raise FailClosed("no_positive_alpha_leader")
+
+    return selected
+
+
+def softmax_weights(selected: Sequence[ScoredRecord], cfg: EngineConfig) -> Dict[str, float]:
+    scores = [item.score for item in selected]
+    zscores, score_sd = robust_zscores(scores)
+    if score_sd < 1e-12:
+        raise FailClosed("selected_scores_flat")
+
+    # Shift by max for numerical stability. beta controls dispersion; it is not a
+    # fallback and cannot save a flat selected_scores vector due to the guard above.
+    scaled = [cfg.softmax_beta * z for z in zscores]
+    max_scaled = max(scaled)
+    exp_values = [math.exp(x - max_scaled) for x in scaled]
+    denom = sum(exp_values)
+    if denom <= 0:
+        raise FailClosed("softmax_denominator_zero")
+
+    raw = {item.record.symbol: (v / denom) * cfg.target_gross for item, v in zip(selected, exp_values)}
+    return cap_and_rescale(raw, cfg)
+
+
+def cap_and_rescale(weights: Mapping[str, float], cfg: EngineConfig) -> Dict[str, float]:
+    remaining = {symbol: max(0.0, float(weight)) for symbol, weight in weights.items()}
+    capped: Dict[str, float] = {}
+
+    for _ in range(len(remaining) + 2):
+        if not remaining:
+            break
+        total_remaining = sum(remaining.values())
+        if total_remaining <= 0:
+            break
+        scale = max(0.0, (cfg.target_gross - sum(capped.values())) / total_remaining)
+        changed = False
+        next_remaining: Dict[str, float] = {}
+        for symbol, weight in remaining.items():
+            candidate = weight * scale
+            if candidate > cfg.max_weight:
+                capped[symbol] = cfg.max_weight
+                changed = True
+            else:
+                next_remaining[symbol] = weight
+        remaining = next_remaining
+        if not changed:
+            for symbol, weight in remaining.items():
+                capped[symbol] = weight * scale
+            remaining = {}
+            break
+
+    gross = sum(capped.values())
+    if abs(gross - cfg.target_gross) > cfg.gross_tolerance:
+        raise FailClosed(f"cannot_reach_target_gross_after_cap gross={gross:.8f}")
+
+    # Remove numerical dust and normalize once more without violating cap materially.
+    normalized = {symbol: compact_float(weight, 10) for symbol, weight in capped.items() if weight > 0}
+    gross2 = sum(normalized.values())
+    if gross2 <= 0:
+        raise FailClosed("zero_gross_after_normalization")
+    adjust = cfg.target_gross / gross2
+    normalized = {symbol: compact_float(weight * adjust, 10) for symbol, weight in normalized.items()}
+
+    if any(weight > cfg.max_weight + 1e-8 for weight in normalized.values()):
+        raise FailClosed("max_weight_violation_after_normalization")
+
+    return dict(sorted(normalized.items(), key=lambda item: item[1], reverse=True))
+
+
+def dispersion_guard(weights: Mapping[str, float], cfg: EngineConfig) -> Dict[str, Any]:
+    values = list(weights.values())
+    gross = sum(abs(x) for x in values)
+    cv = coeff_var_abs(values)
+    unique = rounded_unique_count(values, 6)
+    active = len(values)
+    max_w = max(values) if values else 0.0
+    min_w = min(values) if values else 0.0
+
+    metrics = {
+        "gross": compact_float(gross, 10),
+        "cv": compact_float(cv, 6),
+        "unique_weight_count_6dp": unique,
+        "active_count": active,
+        "max_weight": compact_float(max_w, 10),
+        "min_weight": compact_float(min_w, 10),
+        "max_over_min": compact_float(max_w / min_w, 6) if min_w > 0 else None,
+    }
+
+    if abs(gross - cfg.target_gross) > cfg.gross_tolerance:
+        raise FailClosed(f"gross_guard_failed gross={gross:.10f} target={cfg.target_gross}")
+    if active < cfg.min_active:
+        raise FailClosed(f"active_guard_failed active={active} min={cfg.min_active}")
+    if unique < cfg.min_unique_weights:
+        raise FailClosed(f"unique_weight_guard_failed unique={unique} min={cfg.min_unique_weights}")
+    if cv < cfg.min_cv:
+        raise FailClosed(f"cv_guard_failed cv={cv:.6f} min={cfg.min_cv}")
+
+    return metrics
+
+
+# ---------------------------------------------------------------------------
+# Payload construction and publishing
+# ---------------------------------------------------------------------------
+
+
+def build_pass_payload(
+    cfg: EngineConfig,
+    all_records: Sequence[FeatureRecord],
+    eligible_records: Sequence[FeatureRecord],
+    scored: Sequence[ScoredRecord],
+    selected: Sequence[ScoredRecord],
+    weights: Mapping[str, float],
+    dispersion: Mapping[str, Any],
+    score_meta: Mapping[str, Any],
+    ts_ms: int,
+) -> Dict[str, Any]:
+    scored_by_symbol = {item.record.symbol: item for item in scored}
+    selected_symbols = [item.record.symbol for item in selected]
+    ordered_symbols = list(weights.keys())
+
+    reject_counts: Dict[str, int] = {}
+    for record in all_records:
+        if not record.eligible:
+            reason = record.reject_reason or "unknown"
+            reject_counts[reason] = reject_counts.get(reason, 0) + 1
+
+    target_rows = []
+    for rank, symbol in enumerate(ordered_symbols, start=1):
+        item = scored_by_symbol[symbol]
+        target_rows.append(
+            {
+                "symbol": symbol,
+                "weight": compact_float(weights[symbol], 10),
+                "score": compact_float(item.score, 8),
+                "rank": rank,
+                "features_updated_at_ms": item.record.updated_at_ms,
+            }
+        )
+
+    # The candidate id must change when the actual target vector changes.
+    candidate_material = json_dumps({"weights": weights, "ts_bucket": ts_ms // 1000})
+    candidate_id = f"ram26_v1_{sha256_12(candidate_material)}"
+
+    payload: Dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "status": "PASS",
+        "engine_id": ENGINE_ID,
+        "generator": ENGINE_ID,
+        "champion_candidate_id": candidate_id,
+        "generated_at_ms": ts_ms,
+        "ttl_ms": cfg.ttl_sec * 1000,
+        "target_gross": compact_float(cfg.target_gross, 10),
+        "target_type": "long_only_target_weights",
+        "universe_count": len(all_records),
+        "eligible_count": len(eligible_records),
+        "active_count": len(weights),
+        "selected_symbols": selected_symbols,
+        "weights": {symbol: compact_float(weight, 10) for symbol, weight in weights.items()},
+        "targets": target_rows,
+        "dispersion": dict(dispersion),
+        "alpha_model": {
+            "name": "ram26_composite_momentum_quality_risk_v1",
+            "score_meta": dict(score_meta),
+            "selection": {
+                "active_fraction": cfg.active_fraction,
+                "softmax_beta": cfg.softmax_beta,
+                "max_weight": cfg.max_weight,
+                "min_active": cfg.min_active,
+            },
+        },
+        "risk": {
+            "fail_closed": True,
+            "no_equal_weight_fallback": True,
+            "strict_freshness": cfg.strict_freshness,
+            "feature_max_age_sec": cfg.feature_max_age_sec,
+            "reject_counts": reject_counts,
+        },
+        "bridge_weight_contract": {
+            "name": BRIDGE_CONTRACT_NAME,
+            "version": BRIDGE_CONTRACT_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "target_gross": compact_float(cfg.target_gross, 10),
+            "min_cv": compact_float(cfg.min_cv, 6),
+            "min_unique_weights": cfg.min_unique_weights,
+            "no_equal_weight_fallback": True,
+            "fail_closed_on_flat_signal": True,
+            "preserve_dispersion_required": True,
+        },
+        "source_keys": {
+            "features_key": cfg.features_key,
+            "universe_key": cfg.universe_key,
+        },
+    }
+    return payload
+
+
+def build_fail_payload(cfg: EngineConfig, reason: str, ts_ms: Optional[int] = None, extra: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    t = ts_ms if ts_ms is not None else now_ms()
+    payload: Dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "status": "FAIL_CLOSED",
+        "engine_id": ENGINE_ID,
+        "generator": ENGINE_ID,
+        "generated_at_ms": t,
+        "ttl_ms": min(cfg.ttl_sec, 30) * 1000,
+        "reason": reason,
+        "weights": {},
+        "targets": [],
+        "risk": {
+            "fail_closed": True,
+            "no_equal_weight_fallback": True,
+        },
+        "bridge_weight_contract": {
+            "name": BRIDGE_CONTRACT_NAME,
+            "version": BRIDGE_CONTRACT_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "no_equal_weight_fallback": True,
+            "fail_closed_on_flat_signal": True,
+            "preserve_dispersion_required": True,
+        },
+    }
+    if extra:
+        payload["extra"] = dict(extra)
+    return payload
+
+
+def current_system_is_live(client: Any, cfg: EngineConfig) -> bool:
+    trading_enabled = decode_redis(client.get(cfg.trading_enabled_key))
+    mode = decode_redis(client.get(cfg.mode_key))
+    trading_true = str(trading_enabled).strip().lower() in {"1", "true", "yes", "on"}
+    mode_live = str(mode).strip().upper() == "LIVE"
+    return trading_true or mode_live
+
+
+def publish_payload(client: Any, cfg: EngineConfig, payload: Mapping[str, Any]) -> None:
+    text = json_dumps(payload)
+    status = payload.get("status")
+
+    # Main RAM26 output key. FAIL_CLOSED is also published so monitors can see why no tradeable target exists.
+    client.set(cfg.output_key, text, ex=cfg.ttl_sec)
+    try:
+        client.xadd(cfg.stream_key, {"payload": text, "status": str(status)}, maxlen=1000, approximate=True)
+    except Exception as exc:  # Redis streams may be disabled on some installations.
+        eprint(f"[RAM26_STREAM_WARN] {type(exc).__name__}: {exc}")
+
+    heartbeat = {
+        "engine_id": ENGINE_ID,
+        "status": status,
+        "generated_at_ms": payload.get("generated_at_ms"),
+        "output_key": cfg.output_key,
+    }
+    client.set(cfg.heartbeat_key, json_dumps(heartbeat), ex=max(cfg.ttl_sec * 2, 30))
+
+    if status != "PASS":
+        return
+
+    if cfg.publish_ssot_staged:
+        client.set(cfg.ssot_staged_key, text, ex=cfg.ttl_sec)
+
+    if cfg.publish_ssot_current:
+        if not cfg.allow_current_ssot_write:
+            raise RuntimeError("current SSOT write was requested without explicit unlock")
+        if current_system_is_live(client, cfg) and not cfg.allow_live_ssot_write:
+            raise RuntimeError("refusing current SSOT write while trading appears LIVE; use staged key or explicit live unlock")
+        client.set(cfg.ssot_current_key, text, ex=cfg.ttl_sec)
+
+
+def write_output_file(path: str, payload: Mapping[str, Any]) -> None:
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, sort_keys=True, indent=2)
+        f.write("\n")
+    os.replace(tmp_path, path)
+
+
+# ---------------------------------------------------------------------------
+# Engine cycle
+# ---------------------------------------------------------------------------
+
+
+def run_cycle(cfg: EngineConfig, client: Any = None, records_override: Optional[List[FeatureRecord]] = None) -> EngineResult:
+    ts = now_ms()
+    try:
+        if records_override is not None:
+            records = records_override
+        elif cfg.input_json:
+            records = load_features_from_file(cfg.input_json)
+        else:
+            if client is None:
+                raise RuntimeError("Redis client required when --input-json is not provided")
+            records = load_features_from_redis(client, cfg)
+
+        for record in records:
+            record.apply_risk_filters(cfg, ts)
+        eligible = [record for record in records if record.eligible]
+        if len(eligible) < max(cfg.min_active, math.ceil(cfg.target_gross / cfg.max_weight)):
+            raise FailClosed(
+                f"insufficient_eligible_records eligible={len(eligible)} required={max(cfg.min_active, math.ceil(cfg.target_gross / cfg.max_weight))}"
+            )
+
+        scored, score_meta = score_records(eligible)
+        selected = select_active(scored, cfg)
+        weights = softmax_weights(selected, cfg)
+        dispersion = dispersion_guard(weights, cfg)
+
+        payload = build_pass_payload(cfg, records, eligible, scored, selected, weights, dispersion, score_meta, ts)
+
+        input_cv = compact_float(score_meta.get("score_cv_abs", 0.0), 6)
+        output_cv = dispersion["cv"]
+        eprint(
+            f"[ARES_SLEEVE_PRIMARY] active={dispersion['active_count']} input_cv={input_cv} "
+            f"output_cv={output_cv} target_gross={dispersion['gross']} unique={dispersion['unique_weight_count_6dp']}"
+        )
+        eprint(
+            f"[ARES_DISPERSION_GUARD_PASS] cv={output_cv} unique={dispersion['unique_weight_count_6dp']} "
+            f"gross={dispersion['gross']} candidate={payload['champion_candidate_id']}"
+        )
+
+        if cfg.output_json:
+            write_output_file(cfg.output_json, payload)
+        if cfg.publish_redis:
+            if client is None:
+                client = connect_redis(cfg.redis_url)
+            publish_payload(client, cfg, payload)
+
+        return EngineResult(ok=True, payload=payload)
+
+    except FailClosed as exc:
+        reason = str(exc)
+        payload = build_fail_payload(cfg, reason, ts)
+        eprint(f"[ARES_DISPERSION_GUARD_FAIL_CLOSED] reason={reason}")
+        if cfg.output_json:
+            write_output_file(cfg.output_json, payload)
+        if cfg.publish_redis:
+            if client is None:
+                client = connect_redis(cfg.redis_url)
+            publish_payload(client, cfg, payload)
+        return EngineResult(ok=False, payload=payload, reason=reason)
+
+    except Exception as exc:
+        reason = f"runtime_error:{type(exc).__name__}:{exc}"
+        payload = build_fail_payload(cfg, reason, ts)
+        eprint(f"[RAM26_ENGINE_RUNTIME_FAIL_CLOSED] {reason}")
+        if cfg.output_json:
+            write_output_file(cfg.output_json, payload)
+        if cfg.publish_redis:
+            try:
+                if client is None:
+                    client = connect_redis(cfg.redis_url)
+                publish_payload(client, cfg, payload)
+            except Exception as publish_exc:
+                eprint(f"[RAM26_FAIL_PUBLISH_WARN] {type(publish_exc).__name__}: {publish_exc}")
+        return EngineResult(ok=False, payload=payload, reason=reason)
+
+
+# ---------------------------------------------------------------------------
+# Self-test fixture
+# ---------------------------------------------------------------------------
+
+
+def self_test_records() -> List[FeatureRecord]:
+    ts = now_ms()
+    raw_records: List[Dict[str, Any]] = []
+    # Deterministic, deliberately non-flat feature set.
+    for i in range(18):
+        strength = (17 - i) / 17.0
+        raw_records.append(
+            {
+                "symbol": f"RAM26_TEST_{i + 1:02d}",
+                "ret_1d": 0.002 * math.sin(i),
+                "ret_5d": 0.01 * (strength - 0.35),
+                "ret_20d": 0.04 * (strength - 0.20),
+                "ret_60d": 0.08 * (strength - 0.25),
+                "vol_20d": 0.12 + 0.015 * i,
+                "vol_60d": 0.15 + 0.012 * i,
+                "quality": 1.0 - 0.04 * i,
+                "value": 0.3 + 0.03 * (17 - i),
+                "liquidity": 1.0,
+                "sentiment": 0.1 * math.cos(i / 3.0),
+                "drawdown_20d": -0.01 * i,
+                "spread_bps": 10 + i,
+                "price": 100 + i,
+                "updated_at_ms": ts,
+                "eligible": True,
+            }
+        )
+    return [FeatureRecord.from_mapping(x) for x in raw_records]
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+_STOP = False
+
+
+def handle_stop_signal(signum: int, frame: Any) -> None:  # pragma: no cover - signal glue
+    global _STOP
+    _STOP = True
+    eprint(f"[RAM26_ENGINE_STOP_REQUESTED] signal={signum}")
+
+
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="RAM26 Alpha Engine v1 - fail-closed target generator")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--once", action="store_true", help="run a single cycle")
+    mode.add_argument("--loop", action="store_true", help="run continuously")
+    mode.add_argument("--self-test", action="store_true", help="run deterministic self-test and print JSON")
+
+    parser.add_argument("--input-json", help="load feature records from local JSON instead of Redis")
+    parser.add_argument("--output-json", help="write generated payload to local JSON")
+
+    parser.add_argument("--redis-url", help="Redis URL")
+    parser.add_argument("--universe-key", help="Redis universe key")
+    parser.add_argument("--features-key", help="Redis features key")
+    parser.add_argument("--output-key", help="Redis RAM26 output key")
+    parser.add_argument("--stream-key", help="Redis RAM26 stream key")
+    parser.add_argument("--heartbeat-key", help="Redis RAM26 heartbeat key")
+    parser.add_argument("--ssot-staged-key", help="Redis staged SSOT key")
+    parser.add_argument("--ssot-current-key", help="Redis current SSOT key")
+
+    parser.add_argument("--target-gross", type=float, help="target gross exposure")
+    parser.add_argument("--max-weight", type=float, help="max single-name weight")
+    parser.add_argument("--min-active", type=int, help="minimum active positions")
+    parser.add_argument("--min-cv", type=float, help="minimum output weight CV")
+    parser.add_argument("--min-unique-weights", type=int, help="minimum unique nonzero weights rounded to 6dp")
+    parser.add_argument("--active-fraction", type=float, help="fraction of eligible universe selected")
+    parser.add_argument("--softmax-beta", type=float, help="softmax dispersion beta")
+    parser.add_argument("--feature-max-age-sec", type=int, help="freshness guard in seconds")
+    parser.add_argument("--ttl-sec", type=int, help="Redis output TTL seconds")
+    parser.add_argument("--cycle-sec", type=float, help="loop cycle seconds")
+
+    parser.add_argument("--publish-redis", action="store_true", help="publish payload to Redis output key")
+    parser.add_argument("--publish-ssot-staged", action="store_true", help="also publish PASS payload to staged SSOT key")
+    parser.add_argument("--publish-ssot-current", action="store_true", help="also publish PASS payload to ssot:target:v2:current")
+    parser.add_argument("--allow-current-ssot-write", action="store_true", help="explicit unlock for current SSOT writes")
+    parser.add_argument("--allow-live-ssot-write", action="store_true", help="permit current SSOT writes even if mode/LIVE flags appear enabled")
+    parser.add_argument("--strict-freshness", action="store_true", help="require updated_at_ms and max age")
+    parser.add_argument("--no-strict-freshness", action="store_true", help="disable updated_at_ms freshness guard")
+
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = parse_args(argv)
+    cfg = EngineConfig.from_args(args)
+    cfg.validate()
+
+    if args.self_test:
+        test_cfg = EngineConfig(**{**cfg.__dict__, "strict_freshness": True, "publish_redis": False})
+        result = run_cycle(test_cfg, records_override=self_test_records())
+        print(json.dumps(result.payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0 if result.ok else 2
+
+    # Default to one-shot unless --loop was explicitly requested.
+    run_loop = bool(args.loop)
+    client = None
+    if cfg.publish_redis or (not cfg.input_json):
+        client = connect_redis(cfg.redis_url)
+
+    if not run_loop:
+        result = run_cycle(cfg, client=client)
+        if not cfg.output_json:
+            print(json.dumps(result.payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0 if result.ok else 2
+
+    signal.signal(signal.SIGINT, handle_stop_signal)
+    signal.signal(signal.SIGTERM, handle_stop_signal)
+    eprint(
+        f"[RAM26_ENGINE_START] engine_id={ENGINE_ID} loop=1 cycle_sec={cfg.cycle_sec} "
+        f"features_key={cfg.features_key} output_key={cfg.output_key} publish_redis={cfg.publish_redis}"
+    )
+    exit_code = 0
+    while not _STOP:
+        result = run_cycle(cfg, client=client)
+        if not result.ok:
+            exit_code = 2
+        time.sleep(max(0.5, cfg.cycle_sec))
+    eprint("[RAM26_ENGINE_STOPPED]")
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

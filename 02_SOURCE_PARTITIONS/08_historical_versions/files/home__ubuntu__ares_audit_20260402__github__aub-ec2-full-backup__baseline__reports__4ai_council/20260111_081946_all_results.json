@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_081946",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 16.556,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 34.936,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 14.007,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "6f729b1b986d"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 16.556,
+      "text": "## Analysis\n\nComplete degeneration: **0.0 / 0.0 exposure** across all 19 folds. The OOS numbers are meaningless artifacts—no actual trades occurred. This is a non-functional baseline.\n\n## Diagnosis Priority\n\nZero exposure universally indicates one of:\n1. Signal generation returning NaN/zero\n2. Entry threshold impossible to breach\n3. Universe filter eliminating all candidates\n4. Position sizer blocked by constraint\n\n## Next Commands (3 lines)\n\n```\npython -c \"from src.signals import *; import pandas as pd; s=generate_signals(); print(f'Signal stats: {s.describe()}'); print(f'Non-zero: {(s.abs()>0).sum().sum()}')\"\npython -c \"from src.universe import get_universe; u=get_universe(); print(f'Universe size by date:'); print(u.groupby(level=0).size().describe())\"\npython -c \"from src.config import CONFIG; print('Entry threshold:', CONFIG.get('entry_threshold')); print('Min signal:', CONFIG.get('min_signal_strength'))\"\n```\n\n## Intent\n\nIsolate failure point: verify signals exist → verify universe populated → verify thresholds achievable. First non-trivial output identifies the break. Once located, fix and re-run baseline before any optimization attempts.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 34.936,
+      "text": "Your current “champion” looks degenerate: **exposure is 0.0/0.0** and **every fold is degenerate (1–19)**, which usually means the model/portfolio is producing **all-zero weights** (or everything is getting clipped to 0 by constraints), so the backtest is effectively “no trading.” The oos stats are then not meaningful.\n\n### Likely root causes (most common)\n1. **Hard constraints force zero**  \n   - max gross / max net set to 0  \n   - long_only + signal mostly negative and then clipped  \n   - leverage/position limits too tight, min_trade too high, or turnover cap at 0\n2. **Signal is all NaN/0 after preprocessing**  \n   - feature merge misaligned (timestamps/symbols)  \n   - standardization producing NaNs (zero variance)  \n   - forward-fill/backfill disabled and you’re left with missing values\n3. **Execution layer drops everything**  \n   - liquidity filters too strict  \n   - universe empty after filters  \n   - cost/slippage model rejects orders below threshold\n4. **Label/target leak prevention wipes training rows**  \n   - after purging/embargo, nothing left per fold\n\n---\n\n## What I need from you to give exact “Next Commands”\nTell me what runner/CLI you’re using (aub? make? python entrypoint?) and paste:\n- the **config snippet** for constraints/exposure (gross/net/leverage, min_trade, turnover, long_only)\n- one fold’s **debug log** around portfolio construction (weights before/after clipping)\n- the command you used to produce `ost_v62_unified / unified_baseline`\n\n---\n\n## In the meantime: 3 practical “next commands” (generic)\nThese are written as patterns—swap in your actual executable/script names.\n\n1) **Run a single fold with maximal debug and dump weights**\n```bash\naub run --lane ost_v62_unified --run unified_baseline --fold 1 --log-level DEBUG --dump-weights --dump-signal\n```\n\n2) **Print effective constraints + universe size after filters**\n```bash\naub inspect --lane ost_v62_unified --run unified_baseline --fold 1 --print-constraints --print-universe-stats\n```\n\n3) **Sanity-check that the model outputs non-zero, non-NaN signals**\n```bash\naub validate --lane ost_v62_unified --run unified_baseline --fold 1 --check signal_nonzero --check signal_nan_rate --check weight_clipping\n```\n\nIf you paste your actual command interface (or `aub --help` style subcommands), I’ll rewrite these into the exact 3 lines you can run verbatim.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 14.007,
+      "text": "generate_candidates lane=ost_v63_unified num=100 seed=42\ntrain lane=ost_v63_unified folds=[1,2,3,4,5,6,7,8,9,10]\nevaluate_oos lane=ost_v63_unified",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

@@ -1,0 +1,125 @@
+# ============================================================================
+# B02 Stale Data Sentinel — 설정 템플릿 (v1.0.0)
+#
+# 중요: 이 파일은 "작성된 스키마"일 뿐, Jason님의 실제 EC2 Redis 키 스키마와
+# 일치한다는 보장은 없다. 반드시 아래 절차를 먼저 수행하라.
+#
+#   1) 임시 설정으로 discover 를 1회 실행:
+#        python3 b02_stale_data_sentinel.py --config b02_sentinel.yaml discover \
+#          --patterns "ares:*" "market:*" "emarkos:*" "data:*" \
+#          --sample 20 --output /tmp/b02_discovery.json
+#
+#   2) /tmp/b02_discovery.json 을 직접 검토하여 실제 존재하는 키 패턴과
+#      어느 필드가 timestamp 인지, 단위(ms/s)가 무엇인지 확인.
+#
+#   3) 이 YAML 의 sources[] 블록을 "실존 키 기준으로" 수정.
+#      특히 ts_field, ts_unit, universe_set_key 는 fabrication 이 아니라
+#      discover 리포트 근거로만 설정.
+#
+#   4) observe_only: true 상태로 24h 이상 가동. addon:b02:status:* 를 검증.
+#
+#   5) 그 뒤에야 다른 모듈의 reader 통합(별도 B02-C 패치)을 검토.
+# ============================================================================
+
+redis:
+  # rediss:// 로 시작하면 TLS, redis:// 이면 평문. 없으면 host/port 로 조립.
+  # 예: rediss://***REDACTED***@redis.internal:6380/0
+  url: ""
+  host: "127.0.0.1"
+  port: 6379
+  db: 0
+  use_tls: false
+  # 아래 중 하나만 채운다. 둘 다 비어 있으면 NOAUTH 시도.
+  password_env: "ARES_REDIS_PASSWORD"   # 권장
+  password_file: ""                      # 예: /run/secrets/redis_password
+  socket_timeout_sec: 3.0
+  socket_connect_timeout_sec: 3.0
+  max_retries: 5
+  retry_backoff_sec: 1.0
+
+market:
+  timezone: "America/New_York"
+  regular_open: "09:30"
+  regular_close: "16:00"
+  pre_open: "04:00"
+  post_close: "20:00"
+
+poll_interval_sec: 10
+heartbeat_interval_sec: 15
+status_ttl_sec: 300
+log_level: "INFO"
+publish_events: true
+
+# 기본값은 반드시 true. 클램핑은 별도 패치(B02-C)에서만 활성화.
+observe_only: false
+
+sources:
+  # --------------------------------------------------------------------------
+  # Source 1: 정규장 가격 (Polygon 경유 가정)
+  # discover 리포트로 key_pattern 과 ts_field 를 반드시 교차검증할 것.
+  # --------------------------------------------------------------------------
+  - name: "polygon_price"
+    kind: "hash"                                  # "hash" | "string" | "json"
+    key_pattern: "market:polygon:price:*"         # TODO: EC2 실키로 교체 확인
+    ts_field: "last_update_ts"                    # TODO: 실제 필드명 확인
+    ts_unit: "ms"                                 # "ms" | "s"
+    # 옵션: LIVE_UNI_60 같은 현재 유니버스 집합 키를 지정하면
+    # 집합 멤버에 해당하는 심볼만 검사 (SCAN cost 절감).
+    universe_set_key: "LIVE_UNI_60"               # TODO: 실제 키 이름 확인
+    thresholds:
+      REGULAR: 60       # 정규장: 60초 이상 지연 → stale
+      PRE: 300          # 프리: 5분
+      POST: 300         # 애프터: 5분
+      CLOSED: 86400     # 장마감/주말: 하루 (감시만, 경고 수준)
+    max_scan_count: 200
+
+  # --------------------------------------------------------------------------
+  # Source 2: ARES DTCH 상태 (실제 키는 userMemory 에 따라 ares:dtch:*)
+  # current_dd 가 업데이트되지 않으면 DTCH 판단이 굳어진 전제로 흐른다.
+  # --------------------------------------------------------------------------
+  - name: "dtch_current_dd"
+    kind: "json"                                  # TODO: 실제 type 확인 (hash 일 수도)
+    key_pattern: "ares:dtch:current_dd"           # 단일 키. `*` 없으면 그대로 사용됨
+    ts_field: "ts_ms"                             # TODO: 리포트로 확인
+    ts_unit: "ms"
+    thresholds:
+      REGULAR: 120
+      PRE: 600
+      POST: 600
+      CLOSED: 86400
+
+  # --------------------------------------------------------------------------
+  # Source 3: 브로커 포지션 (KIS) — 이 자체가 stale 이면 동기화 실패 가능성
+  # --------------------------------------------------------------------------
+  - name: "broker_positions"
+    kind: "hash"                                  # TODO: 실제 type 확인
+    key_pattern: "emarkos:v1:positions"
+    ts_field: "updated_at_ms"                     # TODO: 실필드명 확인
+    ts_unit: "ms"
+    thresholds:
+      REGULAR: 60
+      PRE: 300
+      POST: 300
+      CLOSED: 86400
+
+  # --------------------------------------------------------------------------
+  # Source 4: FRED (거시 데이터) — 업데이트 주기가 드물어 임계값 넉넉.
+  # --------------------------------------------------------------------------
+  - name: "fred"
+    kind: "hash"
+    key_pattern: "data:fred:*"                    # TODO: EC2 에 이런 패턴이 있는지 discover 로 확인
+    ts_field: "last_update_ts"
+    ts_unit: "ms"
+    thresholds:
+      ANY: 86400         # 1일
+
+  # --------------------------------------------------------------------------
+  # Source 5: Ortex (숏/다크풀) — 일단위 업데이트 가정.
+  # --------------------------------------------------------------------------
+  - name: "ortex"
+    kind: "hash"
+    key_pattern: "data:ortex:*"                   # TODO: 실키 확인
+    ts_field: "last_update_ts"
+    ts_unit: "ms"
+    thresholds:
+      ANY: 28800         # 8시간

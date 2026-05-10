@@ -1,0 +1,592 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+ARES v27: Orthogonal 팩터 추가
+================================================================================
+v26 베이스라인 (Sharpe 2.02) + 4대 AI 공통 권고사항 #1:
+- Residual Momentum (시장 베타 제거)
+- Idiosyncratic Volatility (고유 변동성)
+- BAB (Betting Against Beta)
+- Downside Risk (하방 변동성)
+- Volume-Price Confirmation (거래량 확인)
+================================================================================
+"""
+
+import numpy as np
+import pandas as pd
+import sqlite3
+import json
+import itertools
+from numba import njit, prange
+import warnings
+warnings.filterwarnings('ignore')
+
+print("=" * 70)
+print("ARES v27: Orthogonal 팩터 추가")
+print("=" * 70)
+
+# =============================================================================
+# 데이터 로드
+# =============================================================================
+print("\n[1] 데이터 로드 중...")
+
+conn = sqlite3.connect("/home/ubuntu/ares_x_unified_database/ares_universal_v2.db", timeout=30)
+query = """
+SELECT date, symbol, close, volume FROM daily_ohlcv
+WHERE date >= '2016-01-01' AND date <= '2024-12-31'
+ORDER BY date, symbol
+"""
+df = pd.read_sql_query(query, conn)
+conn.close()
+
+df = df.drop_duplicates(subset=['date', 'symbol'], keep='last')
+prices = df.pivot(index='date', columns='symbol', values='close')
+volumes = df.pivot(index='date', columns='symbol', values='volume')
+prices.index = pd.to_datetime(prices.index)
+volumes.index = pd.to_datetime(volumes.index)
+
+valid_cols = prices.columns[prices.notna().mean() > 0.8]
+prices = prices[valid_cols].ffill().bfill()
+volumes = volumes[valid_cols].ffill().bfill()
+returns = prices.pct_change()
+returns.iloc[0] = 0
+
+# ETF 데이터
+conn = sqlite3.connect("/home/ubuntu/etf_data_s3.db", timeout=30)
+etf_query = """
+SELECT date, symbol, close FROM daily_ohlcv
+WHERE symbol IN ('QQQ', 'DIA', 'HYG', 'LQD', 'SPY')
+AND date >= '2015-01-01' ORDER BY date, symbol
+"""
+etf_df = pd.read_sql_query(etf_query, conn)
+conn.close()
+
+etf = etf_df.pivot(index='date', columns='symbol', values='close')
+etf.index = pd.to_datetime(etf.index)
+etf = etf.ffill().bfill()
+
+print(f"  주식: {len(prices.columns)}종목, {len(prices)}일")
+
+# =============================================================================
+# 기존 팩터 계산 (v26과 동일)
+# =============================================================================
+print("\n[2] 기존 팩터 계산 중...")
+
+mom_12 = prices.pct_change(252)
+mom_1 = prices.pct_change(21)
+mom_6 = prices.pct_change(126)
+mom_3 = prices.pct_change(63)
+mom_5 = prices.pct_change(5)
+mom_10 = prices.pct_change(10)
+
+high_52w = prices.rolling(252).max()
+low_52w = prices.rolling(252).min()
+
+factors = {}
+
+# 기존 10개 팩터 (v26)
+factors['mom_12_1'] = (mom_12 - mom_1).rank(axis=1, pct=True)
+factors['mom_6_1'] = (mom_6 - mom_1).rank(axis=1, pct=True)
+factors['low_vol'] = (-returns.rolling(63).std()).rank(axis=1, pct=True)
+rolling_ret = returns.rolling(252).mean()
+rolling_vol = returns.rolling(252).std()
+factors['quality'] = (rolling_ret / (rolling_vol + 1e-8)).rank(axis=1, pct=True)
+factors['reversal'] = (-mom_5).rank(axis=1, pct=True)
+factors['near_high'] = (prices / high_52w).rank(axis=1, pct=True)
+mom_accel = mom_3 - mom_3.shift(21)
+factors['acceleration'] = mom_accel.rank(axis=1, pct=True)
+mkt_ret_series = returns.mean(axis=1)
+excess_ret = returns.sub(mkt_ret_series, axis=0).rolling(63).mean()
+factors['rel_strength'] = excess_ret.rank(axis=1, pct=True)
+factors['range_position'] = ((prices - low_52w) / (high_52w - low_52w + 1e-8)).rank(axis=1, pct=True)
+factors['mom_10'] = mom_10.rank(axis=1, pct=True)
+
+print(f"  기존 팩터: {len(factors)}개")
+
+# =============================================================================
+# 새로운 Orthogonal 팩터 계산
+# =============================================================================
+print("\n[3] Orthogonal 팩터 계산 중...")
+
+# 시장 수익률 (SPY 또는 QQQ)
+common_dates = prices.index.intersection(etf.index)
+if 'SPY' in etf.columns:
+    mkt = etf['SPY'].reindex(prices.index).ffill().bfill()
+elif 'QQQ' in etf.columns:
+    mkt = etf['QQQ'].reindex(prices.index).ffill().bfill()
+else:
+    mkt = etf['DIA'].reindex(prices.index).ffill().bfill()
+
+mkt_ret = mkt.pct_change().fillna(0)
+
+# 1. Residual Momentum (잔차 모멘텀)
+# 시장 베타 제거 후 모멘텀 계산
+print("  - Residual Momentum...")
+beta_window = 252
+betas = pd.DataFrame(index=prices.index, columns=prices.columns, dtype=float)
+residual_returns = pd.DataFrame(index=prices.index, columns=prices.columns, dtype=float)
+
+for col in prices.columns:
+    stock_ret = returns[col]
+    for t in range(beta_window, len(prices)):
+        window_stock = stock_ret.iloc[t-beta_window:t].values
+        window_mkt = mkt_ret.iloc[t-beta_window:t].values
+        
+        # 베타 계산 (OLS)
+        cov = np.cov(window_stock, window_mkt)[0, 1]
+        var_mkt = np.var(window_mkt)
+        beta = cov / (var_mkt + 1e-10)
+        betas.iloc[t, betas.columns.get_loc(col)] = beta
+        
+        # 잔차 수익률
+        residual_returns.iloc[t, residual_returns.columns.get_loc(col)] = stock_ret.iloc[t] - beta * mkt_ret.iloc[t]
+
+# 잔차 모멘텀 (12-1)
+res_mom_12 = residual_returns.rolling(252).sum()
+res_mom_1 = residual_returns.rolling(21).sum()
+factors['res_mom_12_1'] = (res_mom_12 - res_mom_1).rank(axis=1, pct=True)
+
+# 2. Idiosyncratic Volatility (고유 변동성)
+# 시장 제거 후 잔차 변동성 (낮을수록 선호)
+print("  - Idiosyncratic Volatility...")
+idio_vol = residual_returns.rolling(63).std()
+factors['idio_vol'] = (-idio_vol).rank(axis=1, pct=True)  # 낮을수록 높은 점수
+
+# 3. BAB (Betting Against Beta)
+# 저베타 종목 선호
+print("  - BAB (Betting Against Beta)...")
+beta_60 = pd.DataFrame(index=prices.index, columns=prices.columns, dtype=float)
+for col in prices.columns:
+    stock_ret = returns[col]
+    for t in range(60, len(prices)):
+        window_stock = stock_ret.iloc[t-60:t].values
+        window_mkt = mkt_ret.iloc[t-60:t].values
+        cov = np.cov(window_stock, window_mkt)[0, 1]
+        var_mkt = np.var(window_mkt)
+        beta_60.iloc[t, beta_60.columns.get_loc(col)] = cov / (var_mkt + 1e-10)
+
+factors['bab'] = (-beta_60).rank(axis=1, pct=True)  # 저베타 선호
+
+# 4. Downside Risk (하방 변동성)
+# 세미분산 기반 (낮을수록 선호)
+print("  - Downside Risk...")
+downside_returns = returns.clip(upper=0)
+semi_var = downside_returns.rolling(63).var()
+factors['downside_risk'] = (-semi_var).rank(axis=1, pct=True)  # 낮을수록 높은 점수
+
+# 5. Volume-Price Confirmation (거래량 확인)
+# 거래량 동반 상승
+print("  - Volume-Price Confirmation...")
+vol_z = volumes / volumes.rolling(63).mean()
+ret_10 = returns.rolling(10).sum()
+vp_confirm = ret_10 * vol_z
+factors['vp_confirm'] = vp_confirm.rank(axis=1, pct=True)
+
+print(f"  새로운 팩터: 5개 추가")
+print(f"  총 팩터: {len(factors)}개")
+
+# =============================================================================
+# NumPy 배열 변환
+# =============================================================================
+factor_names = list(factors.keys())
+FACTORS_NP = np.stack([factors[f].values for f in factor_names], axis=2)
+FACTORS_NP = np.nan_to_num(FACTORS_NP, nan=0.5)
+
+# =============================================================================
+# 레짐 점수 계산 (v26과 동일)
+# =============================================================================
+print("\n[4] 레짐 점수 계산 중...")
+
+common_dates = prices.index.intersection(etf.index)
+mkt_price = etf['QQQ'].reindex(common_dates) if 'QQQ' in etf.columns else etf['DIA'].reindex(common_dates)
+mkt_ret_regime = mkt_price.pct_change()
+sma_50 = mkt_price.rolling(50).mean()
+sma_200 = mkt_price.rolling(200).mean()
+
+trend_score = pd.Series(0.5, index=common_dates)
+trend_score[mkt_price > sma_200] += 0.20
+trend_score[sma_50 > sma_200] += 0.15
+trend_score[mkt_price > sma_50] += 0.10
+trend_score[mkt_price > mkt_price.rolling(20).mean()] += 0.05
+trend_score[mkt_price < sma_200] -= 0.20
+trend_score[(mkt_price < sma_200) & (sma_50 < sma_200)] -= 0.15
+trend_score[mkt_price < mkt_price.rolling(20).mean()] -= 0.05
+trend_score = trend_score.clip(0, 1)
+
+realized_vol = mkt_ret_regime.rolling(20).std() * np.sqrt(252)
+hist_vol = mkt_ret_regime.rolling(252).std() * np.sqrt(252)
+vol_ratio = realized_vol / hist_vol
+vol_score = 1 - vol_ratio.clip(0.5, 2.0) / 2.0
+vol_score = vol_score.clip(0, 1)
+
+if 'HYG' in etf.columns and 'LQD' in etf.columns:
+    hyg = etf['HYG'].reindex(common_dates)
+    lqd = etf['LQD'].reindex(common_dates)
+    credit_ratio = hyg / lqd
+    credit_ma = credit_ratio.rolling(60).mean()
+    credit_std = credit_ratio.rolling(252).std()
+    credit_zscore = (credit_ratio - credit_ma) / credit_std
+    credit_score = 0.5 + credit_zscore.clip(-2, 2) / 4
+    credit_score = credit_score.clip(0, 1)
+else:
+    credit_score = pd.Series(0.5, index=common_dates)
+
+regime_scores = pd.DataFrame({
+    'trend': trend_score,
+    'vol': vol_score,
+    'credit': credit_score
+}).reindex(prices.index).ffill().bfill()
+
+REGIME_SCORES_NP = regime_scores.values.astype(np.float64)
+
+# =============================================================================
+# NumPy 배열 변환
+# =============================================================================
+PRICES_NP = prices.values.astype(np.float64)
+RETURNS_NP = returns.values.astype(np.float64)
+
+n_days, n_assets = RETURNS_NP.shape
+n_factors = len(factor_names)
+
+print(f"\n[5] 데이터 준비 완료: {n_days}일, {n_assets}종목, {n_factors}팩터")
+
+# =============================================================================
+# v27 백테스트 (Numba JIT)
+# =============================================================================
+@njit(parallel=True, cache=True)
+def fast_backtest_v27(
+    prices: np.ndarray,
+    returns: np.ndarray,
+    factors: np.ndarray,
+    regime_scores: np.ndarray,
+    factor_weights: np.ndarray,
+    # 파라미터
+    target_vol: float,
+    max_lev: float,
+    min_lev: float,
+    rebal_days: int,
+    top_k: int,
+    trend_w: float,
+    vol_w: float,
+    credit_w: float,
+    ultra_bull_exp: float,
+    bull_exp: float,
+    neutral_exp: float,
+    bear_exp: float,
+    crisis_exp: float,
+    # 고정 파라미터
+    cost_rate: float = 0.002,
+    dd_warning: float = -0.20,
+    dd_stop: float = -0.35,
+) -> tuple:
+    """v27 백테스트 (Orthogonal 팩터 포함)"""
+    
+    n_days, n_assets = returns.shape
+    n_factors = factors.shape[2]
+    
+    # 초기화
+    portfolio_value = 1.0
+    peak = 1.0
+    is_halted = False
+    halt_counter = 0
+    
+    current_weights = np.zeros(n_assets)
+    daily_returns = np.zeros(n_days - 252)
+    
+    vol_window = 20
+    port_ret_sum = 0.0
+    port_ret_sq_sum = 0.0
+    port_ret_count = 0
+    
+    for t in range(252, n_days):
+        # 레짐 점수
+        trend = regime_scores[t-1, 0]
+        vol = regime_scores[t-1, 1]
+        credit = regime_scores[t-1, 2]
+        
+        composite = trend * trend_w + vol * vol_w + credit * credit_w
+        
+        # 레짐별 노출도
+        if composite >= 0.87:
+            base_exposure = ultra_bull_exp
+        elif composite >= 0.70:
+            base_exposure = bull_exp
+        elif composite >= 0.50:
+            base_exposure = neutral_exp
+        elif composite >= 0.30:
+            base_exposure = bear_exp
+        else:
+            base_exposure = crisis_exp
+        
+        # DD Control
+        if portfolio_value > peak:
+            peak = portfolio_value
+        
+        dd = (portfolio_value - peak) / peak if peak > 0 else 0
+        
+        if dd <= dd_stop:
+            is_halted = True
+            halt_counter = 10
+        
+        if is_halted:
+            halt_counter -= 1
+            if halt_counter <= 0:
+                is_halted = False
+        
+        if is_halted:
+            dd_scale = 0.3
+        elif dd <= dd_warning:
+            dd_scale = 0.7
+        else:
+            dd_scale = 1.0
+        
+        # 변동성 타겟
+        if port_ret_count >= vol_window:
+            mean_ret = port_ret_sum / vol_window
+            var_ret = port_ret_sq_sum / vol_window - mean_ret ** 2
+            rv = np.sqrt(max(0, var_ret)) * np.sqrt(252)
+            if rv > 0.01:
+                vol_adj = target_vol / rv
+                vol_adj = min(2.0, max(0.5, vol_adj))
+            else:
+                vol_adj = 1.0
+        else:
+            vol_adj = 1.0
+        
+        # 리밸런싱
+        if t % rebal_days == 0:
+            # 팩터 점수 계산
+            scores = np.zeros(n_assets)
+            for i in range(n_assets):
+                for f in range(n_factors):
+                    scores[i] += factors[t-1, i, f] * factor_weights[f]
+            
+            # 상위 K 종목
+            top_indices = np.argsort(-scores)[:top_k]
+            
+            # 노출도
+            exposure = base_exposure * vol_adj
+            exposure = min(max_lev, max(min_lev, exposure))
+            exposure *= dd_scale
+            
+            # 새 가중치 (동일 가중)
+            new_weights = np.zeros(n_assets)
+            for idx in top_indices:
+                new_weights[idx] = exposure / top_k
+            
+            current_weights = new_weights
+        
+        # 수익률 계산
+        port_ret = 0.0
+        for i in range(n_assets):
+            port_ret += current_weights[i] * returns[t, i]
+        
+        # 비용
+        if t % rebal_days == 0:
+            port_ret -= cost_rate * 0.5
+        
+        daily_returns[t - 252] = port_ret
+        portfolio_value *= (1 + port_ret)
+        
+        # 변동성 버퍼 업데이트
+        if port_ret_count < vol_window:
+            port_ret_sum += port_ret
+            port_ret_sq_sum += port_ret ** 2
+            port_ret_count += 1
+        else:
+            port_ret_sum += port_ret
+            port_ret_sq_sum += port_ret ** 2
+    
+    # 성과 계산
+    valid_returns = daily_returns[daily_returns != 0]
+    if len(valid_returns) < 100:
+        return 0.0, 0.0, 0.0, 0.0, 0.0
+    
+    mean_ret = np.mean(valid_returns)
+    std_ret = np.std(valid_returns)
+    
+    sharpe = (mean_ret / std_ret) * np.sqrt(252) if std_ret > 1e-10 else 0
+    annual_return = mean_ret * 252
+    
+    # MDD
+    cum_value = 1.0
+    peak_value = 1.0
+    max_dd = 0.0
+    for r in valid_returns:
+        cum_value *= (1 + r)
+        if cum_value > peak_value:
+            peak_value = cum_value
+        dd = (cum_value - peak_value) / peak_value
+        if dd < max_dd:
+            max_dd = dd
+    
+    # IS/OOS
+    is_end = int(len(valid_returns) * 0.55)
+    is_returns = valid_returns[:is_end]
+    oos_returns = valid_returns[is_end:]
+    
+    is_sharpe = (np.mean(is_returns) / np.std(is_returns)) * np.sqrt(252) if np.std(is_returns) > 1e-10 else 0
+    oos_sharpe = (np.mean(oos_returns) / np.std(oos_returns)) * np.sqrt(252) if np.std(oos_returns) > 1e-10 else 0
+    
+    return sharpe, is_sharpe, oos_sharpe, annual_return, max_dd
+
+# =============================================================================
+# 파레토 최적화
+# =============================================================================
+print("\n[6] 파레토 최적화 시작...")
+
+# v26 베이스라인 파라미터 (고정)
+v26_baseline = {
+    'trend_w': 0.47,
+    'vol_w': 0.28,
+    'credit_w': 0.25,
+    'cost_rate': 0.002,
+    'dd_warning': -0.20,
+    'dd_stop': -0.35,
+    'min_lev': 0.3,
+}
+
+# 팩터 가중치 조합 (기존 10개 + 새로운 5개)
+# 기존 팩터: mom_12_1, mom_6_1, low_vol, quality, reversal, near_high, acceleration, rel_strength, range_position, mom_10
+# 새로운 팩터: res_mom_12_1, idio_vol, bab, downside_risk, vp_confirm
+
+# 기존 팩터 가중치 (v26 고정)
+base_fw = [0.12, 0.12, 0.10, 0.10, 0.08, 0.10, 0.10, 0.10, 0.08, 0.10]
+
+# 새로운 팩터 가중치 조합
+new_fw_options = [
+    [0.0, 0.0, 0.0, 0.0, 0.0],  # 기존만
+    [0.10, 0.05, 0.05, 0.05, 0.05],  # 균형
+    [0.15, 0.10, 0.05, 0.05, 0.05],  # 잔차모멘텀 강조
+    [0.10, 0.10, 0.10, 0.05, 0.05],  # 리스크 팩터 강조
+    [0.12, 0.08, 0.08, 0.06, 0.06],  # 혼합
+    [0.08, 0.08, 0.08, 0.08, 0.08],  # 균등
+    [0.15, 0.08, 0.08, 0.05, 0.04],  # 잔차모멘텀 + 리스크
+    [0.10, 0.12, 0.08, 0.06, 0.04],  # 고유변동성 강조
+]
+
+# 테스트할 파라미터
+param_grid = {
+    'target_vol': [0.27, 0.29, 0.31],
+    'max_lev': [1.9, 2.0],
+    'rebal_days': [14, 21],
+    'top_k': [45, 48],
+    'ultra_bull_exp': [1.9, 2.0],
+    'bull_exp': [1.6, 1.7],
+    'neutral_exp': [1.1, 1.2],
+    'bear_exp': [0.5, 0.6],
+    'crisis_exp': [0.24, 0.3],
+}
+
+keys = list(param_grid.keys())
+values = list(param_grid.values())
+all_combinations = list(itertools.product(*values))
+
+print(f"  파라미터 조합: {len(all_combinations)}")
+print(f"  팩터 가중치 조합: {len(new_fw_options)}")
+print(f"  총 테스트: {len(all_combinations) * len(new_fw_options)}")
+
+results = []
+
+for fw_idx, new_fw in enumerate(new_fw_options):
+    # 전체 팩터 가중치 (기존 + 새로운)
+    full_fw = np.array(base_fw + new_fw, dtype=np.float64)
+    # 정규화
+    full_fw = full_fw / full_fw.sum()
+    
+    for i, combo in enumerate(all_combinations):
+        params = dict(zip(keys, combo))
+        
+        try:
+            sharpe, is_sharpe, oos_sharpe, annual_return, mdd = fast_backtest_v27(
+                PRICES_NP, RETURNS_NP, FACTORS_NP, REGIME_SCORES_NP,
+                factor_weights=full_fw,
+                target_vol=params['target_vol'],
+                max_lev=params['max_lev'],
+                min_lev=v26_baseline['min_lev'],
+                rebal_days=params['rebal_days'],
+                top_k=params['top_k'],
+                trend_w=v26_baseline['trend_w'],
+                vol_w=v26_baseline['vol_w'],
+                credit_w=v26_baseline['credit_w'],
+                ultra_bull_exp=params['ultra_bull_exp'],
+                bull_exp=params['bull_exp'],
+                neutral_exp=params['neutral_exp'],
+                bear_exp=params['bear_exp'],
+                crisis_exp=params['crisis_exp'],
+                cost_rate=v26_baseline['cost_rate'],
+                dd_warning=v26_baseline['dd_warning'],
+                dd_stop=v26_baseline['dd_stop'],
+            )
+            
+            if not np.isnan(sharpe) and sharpe > 0:
+                results.append({
+                    'sharpe': sharpe,
+                    'is_sharpe': is_sharpe,
+                    'oos_sharpe': oos_sharpe,
+                    'annual_return': annual_return,
+                    'mdd': mdd,
+                    'fw_idx': fw_idx,
+                    'new_fw': str(new_fw),
+                    **params
+                })
+        except Exception as e:
+            pass
+    
+    print(f"  팩터 가중치 {fw_idx+1}/{len(new_fw_options)} 완료 (new_fw={new_fw})")
+
+print(f"\n  유효 결과: {len(results)}")
+
+# 결과 정렬
+if len(results) > 0:
+    results_df = pd.DataFrame(results)
+    results_df = results_df.sort_values('sharpe', ascending=False)
+    
+    print("\n[7] 상위 20개 결과:")
+    print("-" * 140)
+    
+    for idx, row in results_df.head(20).iterrows():
+        print(f"  Sharpe: {row['sharpe']:.4f} | IS: {row['is_sharpe']:.4f} | OOS: {row['oos_sharpe']:.4f} | "
+              f"AR: {row['annual_return']*100:.1f}% | MDD: {row['mdd']*100:.1f}% | "
+              f"FW: {row['new_fw']}")
+    
+    # v26 베이스라인 대비 비교
+    print("\n" + "=" * 70)
+    print("v26 베이스라인 대비 비교")
+    print("=" * 70)
+    print(f"  v26 베이스라인: Sharpe 2.02, IS 2.04, OOS 1.40, MDD -29.3%")
+    
+    best = results_df.iloc[0]
+    print(f"\n  최고 성과:")
+    print(f"    Sharpe: {best['sharpe']:.4f} ({(best['sharpe']/2.02-1)*100:+.1f}%)")
+    print(f"    IS Sharpe: {best['is_sharpe']:.4f} ({(best['is_sharpe']/2.04-1)*100:+.1f}%)")
+    print(f"    OOS Sharpe: {best['oos_sharpe']:.4f} ({(best['oos_sharpe']/1.40-1)*100:+.1f}%)")
+    print(f"    MDD: {best['mdd']*100:.2f}% ({(best['mdd']/(-0.293)-1)*100:+.1f}%)")
+    print(f"    팩터 가중치: {best['new_fw']}")
+    
+    # 팩터 가중치별 평균 성과
+    print("\n  팩터 가중치별 평균 성과:")
+    for fw_idx in range(len(new_fw_options)):
+        fw_results = results_df[results_df['fw_idx'] == fw_idx]
+        if len(fw_results) > 0:
+            print(f"    FW{fw_idx} ({new_fw_options[fw_idx]}): "
+                  f"Sharpe {fw_results['sharpe'].mean():.4f}, "
+                  f"OOS {fw_results['oos_sharpe'].mean():.4f}")
+    
+    # 결과 저장
+    output = {
+        'baseline': {'sharpe': 2.02, 'is_sharpe': 2.04, 'oos_sharpe': 1.40, 'mdd': -0.293},
+        'total_tests': len(all_combinations) * len(new_fw_options),
+        'valid_results': len(results),
+        'best_result': best.to_dict(),
+        'factor_names': factor_names,
+        'new_factor_names': ['res_mom_12_1', 'idio_vol', 'bab', 'downside_risk', 'vp_confirm'],
+        'top_results': results_df.head(50).to_dict('records')
+    }
+    
+    with open('/home/ubuntu/ares_v27_orthogonal_results.json', 'w') as f:
+        json.dump(output, f, indent=2, default=str)
+    
+    print(f"\n결과 저장: /home/ubuntu/ares_v27_orthogonal_results.json")
+
+print("\n완료!")

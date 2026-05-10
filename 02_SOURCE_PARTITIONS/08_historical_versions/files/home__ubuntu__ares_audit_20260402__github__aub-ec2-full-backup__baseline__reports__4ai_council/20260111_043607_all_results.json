@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_043607",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 18.456,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 34.538,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 17.761,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "5f4367317434"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 18.456,
+      "text": "# AUB Handoff Analysis\n\n## Diagnosis\n\n**Critical Failure**: Complete degeneracy across all 19 folds with zero exposure. The baseline is not trading at all.\n\n| Metric | Value | Status |\n|--------|-------|--------|\n| Exposure | 0.0 / 0.0 | 🔴 DEAD |\n| Degenerate Folds | 19/19 | 🔴 100% |\n| MDD | None | 🔴 No trades |\n\nThe \"good\" Sharpe ratios are artifacts—no positions means no losses, but also no strategy.\n\n## Root Cause Hypotheses\n1. Universe filter returning empty set\n2. Entry signal threshold never crossed\n3. Position sizer returning zero allocations\n4. Data alignment issue (features vs prices mismatch)\n\n## Next Commands (3 lines)\n\n```\npython -m ost.cli debug-exposure --lane ost_v62_unified --run unified_baseline --fold 1\npython -m ost.cli validate-universe --lane ost_v62_unified --min-symbols 50\npython -m ost.cli run-baseline --lane ost_v62_unified --strategy naive_long --force\n```\n\n---\n\n**Rationale**:\n1. `debug-exposure`: Trace why fold 1 has zero exposure—find the chokepoint\n2. `validate-universe`: Confirm sufficient symbols survive filtering\n3. `run-baseline` with `naive_long`: Establish a working (even if weak) baseline to unblock iteration",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 34.538,
+      "text": "Your current “champion” is effectively a **no-trade / all-cash** model:\n\n- **exposure_min/max: 0.0 / 0.0** ⇒ positions are always zero.\n- **degenerate_folds: [1..19]** ⇒ every CV fold produced a degenerate solution (typically all-zero predictions/weights, or constraints forcing trivial output).\n- The reported **oos_mean** is therefore likely coming from the scorer’s fallback behavior (or from evaluating a constant strategy), not from real tradable exposure.\n\n### What this usually means (most common causes)\n1. **Exposure constraints are binding at zero**\n   - e.g., max gross exposure set to 0, leverage cap = 0, or a “disable trading” flag enabled.\n2. **Signal is getting zeroed**\n   - feature normalization bug, NaNs dropped leaving empty rows, or post-processing clipping everything to 0.\n3. **Optimizer infeasible / failing → returning zeros**\n   - tight constraints (turnover, risk, long-only with no valid names, etc.) causing solver to return a trivial feasible point.\n4. **Universe empty in folds**\n   - after filters, there’s nothing to trade in each fold.\n\n### Minimal next steps\n- Confirm whether the strategy *should* trade in this lane (`ost_v62_unified`).\n- Identify **where exposure becomes 0**: signal generation vs. portfolio construction vs. risk/constraints.\n- Run a single fold with verbose logging and dump intermediate artifacts (signal stats, eligible universe count, constraint values).\n\n### Next Commands (3 lines)\nI don’t know your exact CLI, but the intent should be these three actions:\n\n1) **Inspect the run config / constraint settings (look for exposure/leverage=0):**\n```bash\naub show-config --lane ost_v62_unified --run unified_baseline\n```\n\n2) **Run one fold with maximum debug, dumping signal + portfolio intermediates:**\n```bash\naub run --lane ost_v62_unified --run unified_baseline --fold 1 --debug --dump-artifacts\n```\n\n3) **Print exposure + universe diagnostics from the dumped artifacts:**\n```bash\naub diagnostics --lane ost_v62_unified --run unified_baseline --fold 1 --check exposure,universe,signal,solver\n```\n\nIf you tell me the actual command names your repo uses (or paste `aub --help` / the prior run command), I can rewrite those 3 lines to the exact correct invocations for your environment.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 17.761,
+      "text": "generate_candidates --n 3 --parent champion --mutation_rate 0.05 --method gaussian\nqueue_evals --candidate_ids new1 new2 new3 --folds [20,21,22,23,24]\nmonitor --timeout 3600 --update_champion true",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

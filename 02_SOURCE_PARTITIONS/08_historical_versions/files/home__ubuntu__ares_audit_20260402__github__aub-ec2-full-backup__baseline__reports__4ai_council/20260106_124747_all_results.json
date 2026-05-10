@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260106_124747",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 14.632,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 30.25,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 7.482,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "7c0b04584b41"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 14.632,
+      "text": "# Handoff Acknowledged\n\n## Status Summary\n| Metric | Value |\n|--------|-------|\n| **Champion** | `baseline/champion_v5_latest.json` |\n| **Tuning Mean** | 1.904 |\n| **Lockbox Mean** | 1.793 |\n| **Lockbox Min** | 1.134 |\n| **Pending PASS** | None |\n| **Inconclusive** | None |\n\n## Ready to Execute\n\nThe system is in a stable state with no pending candidates. The next commands will:\n\n1. **`aub_autopilot.py`** — Run module-level experiments and select best performers\n2. **`system_autopilot.py`** — Test system-level candidate configurations  \n3. **`aub_next_fix.py`** — Generate diagnostic report for improvement opportunities\n\n### Run Commands?\n\n```bash\n# Execute in sequence:\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\n\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\n\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n---\n\n**Shall I proceed with execution?** Or would you like to:\n- Review current champion configuration first\n- Check module registry status\n- Modify candidate specifications\n- Skip to a specific step",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 30.25,
+      "text": "You can proceed exactly with those three commands; they represent a standard “pick best module candidate → run system-level candidates → generate next-fix report” loop. Here’s what each one will do and what to look for.\n\n## 1) Run module autopilot + select best\n```bash\npython3 experiment_system/tools/aub_autopilot.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --run --select-best\n```\n\n**Purpose:** Runs candidate module experiments defined in `module_registry.yaml`, evaluates them, and (with `--select-best`) promotes the best performer into the “champion” slot (or updates the champion artifact, depending on your tooling conventions).\n\n**What to verify after it finishes:**\n- A new “PASS candidate” exists (or a new champion is written) and the **champion file** is updated if the candidate beat the current champion:\n  - current champion: `baseline/champion_v5_latest.json`\n- Compare metrics:\n  - You currently have:\n    - tuning_mean/min: **1.9038 / 0.4315**\n    - lockbox_mean/min: **1.7925 / 1.1337**\n- Ensure “best” is chosen according to your policy (often lockbox_mean primary, then tuning_mean as tie-breaker, but your system might differ).\n\n**If it still yields “no PASS candidates”:**\n- That typically means all candidates failed hard constraints (e.g., regressions on lockbox thresholds, failing tests, violating min bounds, etc.). In that case, command (3) becomes especially important.\n\n## 2) Run system-level autopilot (system candidates)\n```bash\npython3 experiment_system/tools/system_autopilot.py \\\n  --spec experiment_system/config/system_candidates.yaml \\\n  --run\n```\n\n**Purpose:** Evaluates end-to-end/system configurations (often cross-module combinations, runtime flags, prompts, orchestrations, etc.) defined in `system_candidates.yaml`.\n\n**What to verify:**\n- Whether any system candidate improves **lockbox_mean** without unacceptable regressions elsewhere.\n- Whether any candidate is marked PASS/FAIL/INCONCLUSIVE and why (time-outs, flaky evals, missing artifacts).\n\n## 3) Generate “next fix” report\n```bash\npython3 experiment_system/tools/aub_next_fix.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --output baseline/reports/next_fix.md\n```\n\n**Purpose:** Produces a targeted remediation plan based on latest failures/inconclusive runs—usually pointing at the most “fixable” blockers (e.g., a specific module candidate failing a constraint, missing data, evaluation instability).\n\n**What to do with it:**\n- Open `baseline/reports/next_fix.md` and follow the top-ranked fix items first.\n- If there were “no PASS candidates,” this report should tell you *which constraints are preventing promotion* and which candidate is closest.\n\n---\n\n## Practical run order + logs\nIf you want a clean run with captured logs:\n```bash\nset -euo pipefail\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best | tee /tmp/aub_autopilot.log\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run | tee /tmp/system_autopilot.log\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n---\n\nIf you paste the output summary from (1) and/or (2) (especially any PASS/FAIL reasons and the resulting metric table), I can help interpret why you’re not getting PASS candidates (if that happens) and suggest the most likely configuration or constraint to adjust.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 7.482,
+      "text": "This appears to be an automated handoff log from an AI experimentation or tuning system (e.g., involving AUB/system autopilots for candidate selection, champion tracking, and fix generation). Key highlights:\n\n- **Current Champion**: `baseline/champion_v5_latest.json` (tuning: mean 1.90/min 0.43; lockbox: mean 1.79/min 1.13).\n- No PASS candidates or inconclusive results.\n- **Next Steps**: Run the provided bash commands sequentially to select the best candidate, run system autopilot, and generate a next-fix report.\n\nI can't execute bash commands directly, but here's how you could run them manually (assuming the `experiment_system` repo/environment is set up):\n\n```bash\n# 1. Select best AUB candidate\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\n\n# 2. Run system autopilot\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\n\n# 3. Generate next fix report\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\nIf you need help debugging these scripts, interpreting metrics (e.g., tuning/lockbox means/mins), setting up the environment, or analyzing the champion JSON/report output, share more details!",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

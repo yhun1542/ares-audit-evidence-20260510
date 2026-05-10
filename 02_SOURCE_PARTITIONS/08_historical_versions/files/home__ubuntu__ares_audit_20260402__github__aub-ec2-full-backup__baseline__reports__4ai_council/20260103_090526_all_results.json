@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_090526",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 16.717,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 30.868,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 33.825,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 17.908,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "a3a44fa53336"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 16.717,
+      "text": "# AUB HANDOFF Analysis\n\n## Assessment\n\n**Critical Issues:**\n| Metric | Value | Status |\n|--------|-------|--------|\n| Champion file | None | ⚠️ MISSING |\n| Degenerate folds | 4/10 (40%) | 🔴 HIGH |\n| OOS min | -0.026 | ⚠️ MARGINAL |\n| MDD tracking | None | ⚠️ MISSING |\n\nThe 4 degenerate folds (1, 2, 3, 8) indicate model instability—nearly half of cross-validation is failing. No champion file means nothing to deploy.\n\n---\n\n## Next Commands (3 lines)\n\n```\ndiagnose --folds 1,2,3,8 --verbose\nretrain --min-exposure 0.05 --regularize --drop-degenerate\nvalidate --full --compute-mdd\n```\n\n---\n\n## Rationale\n\n1. **diagnose**: Identify root cause of fold degeneracy (likely early folds have regime issues or insufficient data)\n2. **retrain**: Add minimum exposure floor and regularization to prevent degenerate solutions; excluding broken folds for cleaner training\n3. **validate**: Full validation pass with MDD computation to fill missing risk metrics before any promotion\n\n**Do not promote** until degenerate folds < 2 and MDD is computed.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 30.868,
+      "text": "You’ve got a “champion” with decent mean OOS (3.32) but a slightly negative worst-case OOS min (-0.026) and **multiple degenerate CV folds (1,2,3,8)**. Also **worst_mdd is missing**, so the next 3 commands should (a) compute missing risk stats, (b) diagnose why those folds degenerate, (c) rerun with guardrails (or drop/repair bad folds) and a small seed sweep.\n\nBecause I don’t know your exact AUB CLI, here are the **3 next-command lines** in a *tool-agnostic* form you can map to your repo’s commands:\n\n1) **Compute full eval (incl. MDD) for the current champion**\n```\nRUN_EVAL --target champion --metrics oos_mean,oos_min,worst_mdd --by-fold --save-report\n```\n\n2) **Diagnose degenerate folds (dump predictions/exposures/features for folds 1,2,3,8)**\n```\nRUN_DIAGNOSE --target champion --folds 1,2,3,8 --checks constant_preds,all_zero_exposure,nan_inf,leakage --dump artifacts/degenerate_folds/\n```\n\n3) **Rerun training/selection with degeneracy safeguards + small seed sweep**\n```\nRUN_TRAIN --cv robust --reject-degenerate-folds --exposure-cap 0.85 --seed-sweep 5 --promote-if improves_oos_min_and_mdd\n```\n\nIf you paste the output of `ls` / `--help` for your available commands (or the repo’s README “how to run”), I can rewrite these into the **exact** three executable lines for your environment.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 33.825,
+      "text": "python train.py --retrain_degenerate --folds 1,2,3,8 --regularization 0.05\npython evolve.py --objective max_oos_min --population_size 50\npython validate.py --model current_champion --check_exposure",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 17.908,
+      "text": "submit --lane 0 --strategy mutate --parent current --rate 0.1 --exclude_folds \"[1,2,3,8]\"\nsubmit --lane 1 --strategy random --dims 16 --exclude_folds \"[1,2,3,8]\"\nsubmit --lane 2 --strategy ensemble --models \"[current, prev]\" --weights \"0.7,0.3\"",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

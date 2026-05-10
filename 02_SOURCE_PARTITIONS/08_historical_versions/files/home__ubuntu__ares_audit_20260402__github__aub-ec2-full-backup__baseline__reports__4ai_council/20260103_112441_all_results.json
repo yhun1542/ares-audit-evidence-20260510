@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_112441",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 13.449,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 38.489,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 38.951,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 19.153,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "1770e32ad819"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 13.449,
+      "text": "# Analysis\n\n**Critical Issues:**\n- 4 degenerate folds [1, 2, 3, 8] — model unstable across 40% of CV splits\n- No file associated with champion\n- Missing MDD calculation\n- Exposure floor at 0.0 indicates potential dead periods\n\n## Next Commands (3 lines)\n\n```\ndiagnose_folds --folds 1,2,3,8 --verbose\nsweep --param regularization --range 0.001,0.1 --objective min_degenerate\nrecompute_champion --calc-mdd --require-file --min-valid-folds 8\n```\n\n**Rationale:** Priority is stabilizing fold performance before optimizing returns. The degenerate fold count must drop below 2 for production viability.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 38.489,
+      "text": "I’m missing the context needed to generate the exact “Next Commands (3 lines)” (repo/tooling/CLI entrypoints, where the champion `file` path should be, what “AUB” stands for in your stack, etc.). Right now the handoff shows:\n\n- `file:` is blank (so I can’t point commands at the artifact)\n- `worst_mdd: None` (likely not computed or metric disabled)\n- `degenerate_folds: [1, 2, 3, 8]` (needs diagnostics: no trades, constant preds, NaNs, data leakage guards firing, etc.)\n\nIf you tell me **(a)** the repo command style (e.g., `make ...`, `python -m ...`, `aub ...`), and **(b)** where artifacts live, I’ll output the exact 3 lines.\n\nIn the meantime, here are the *three most useful next steps* you probably want, expressed generically (replace placeholders with your actual CLI):\n\n1) Re-evaluate the champion and force all metrics (incl. MDD):\n```bash\n<cli> eval --model <CHAMPION_FILE> --split oos --metrics all --include-mdd\n```\n\n2) Run a fold-level diagnostic specifically on degenerate folds:\n```bash\n<cli> diagnose --model <CHAMPION_FILE> --folds 1,2,3,8 --dump preds,labels,exposure --check nan,constant,no_trades\n```\n\n3) Re-run CV with stricter guards (or different seed) to see if degeneracy is systemic:\n```bash\n<cli> cv --config <CONFIG> --seeds 0,1,2 --fail-on-degenerate --report fold_summary\n```\n\nQuestions to make this precise (answer any 2–3 and I’ll produce the exact 3 commands):\n1) What is the actual command/entrypoint name? (e.g., `aub`, `backtest.py`, `make run`, `python -m ...`)\n2) Where is the champion artifact stored and what should `file:` be?\n3) What does a “degenerate fold” mean in your pipeline (0 exposure, 0 trades, NaNs, constant predictions, etc.)?\n4) Do you want the next commands to **fix** degeneracy (data/filters) or just **report** it?",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 38.951,
+      "text": "python train.py --learning_rate 0.001 --gradient_clip_val 1.0 --dropout 0.5\npython train.py --learning_rate 0.002 --weight_decay 0.01 --max_exposure 0.6\npython train.py --learning_rate 0.0005 --hidden_size 512 --layers 3",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 19.153,
+      "text": "generate_candidates --num 5 --exclude_folds \"[1,2,3,8]\" --seed 42\nevaluate_candidates --metric oos_mean --mdd_threshold 0.1\npromote_champion --min_improvement 0.05",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

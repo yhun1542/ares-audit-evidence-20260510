@@ -1,0 +1,55 @@
+# ============================================================================
+# B11 Intraday XGBoost — Research-grade pipeline config (v1.0.0)
+#
+# 주의: 본 모듈은 research-grade. PM2 데몬이 아니라 CLI.
+#       라이브 거래에 자동 연결되지 않는다.
+#       배포 전 반드시 real-environment audit 필요 (userMemory 원칙).
+# ============================================================================
+
+paths:
+  # 입력 bars 데이터 (parquet 또는 csv). 심볼별 파일 또는 long-format.
+  bars_data: "/home/ubuntu/data/bars/AAPL_1min.parquet"
+  model_out: "/home/ubuntu/ares_current/models/b11_AAPL.pkl"
+  backtest_out: "/var/log/ares/b11_backtest.json"
+
+# 모델 설정
+model:
+  kind: "sklearn_gbm"              # sklearn_gbm | xgboost | lightgbm
+  n_estimators: 300
+  max_depth: 6
+  learning_rate: 0.05
+  random_state: 42
+
+# Backtest 설정
+backtest:
+  n_splits: 6                      # userMemory "walk-forward 6/6 wins"
+  purge_size: 5                    # label horizon 과 같거나 크게
+  signal_threshold: 0.52
+  long_short: false
+  calibrate: true
+
+# Bootstrap gate (userMemory: "Bootstrap SR win rate ≥ 90%")
+bootstrap_gate:
+  n_bootstrap: 1000
+  block_size: 20
+  min_win_rate: 0.90
+  min_sr: 0.5
+  max_mdd: 0.15
+
+# Cost model
+cost:
+  commission_bps: 0.5
+  slippage_k: 10.0
+  min_slippage_bps: 0.1
+  impact_k: 0.0                    # 0 = 비활성
+
+# Features
+features:
+  momentum_lookbacks: [5, 15, 60]
+  vol_windows: [15, 60]
+  rsi_window: 14
+  volume_window: 30
+  label_horizon: 5                 # t+5 분 수익률 예측
+  label_threshold: 0.0
+
+log_level: "INFO"

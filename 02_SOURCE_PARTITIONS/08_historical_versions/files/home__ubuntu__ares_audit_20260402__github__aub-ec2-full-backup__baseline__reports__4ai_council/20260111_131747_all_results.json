@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_131747",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.693,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 35.933,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 19.841,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "62263c317fc5"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.693,
+      "text": "## Analysis\n\n**Critical Issue**: Fully degenerate strategy — zero exposure across all 19 folds. The OOS metrics are artifacts (no trades = no losses ≠ good strategy).\n\nRoot cause: Entry conditions too restrictive or signal pipeline broken in `ost_v62_unified`.\n\n## Next Commands (3 lines)\n\n```\naub diag --lane ost_v62_unified --run unified_baseline --dump-signals --first-fold\naub sweep --lane ost_v62_unified --param entry_z 0.5:2.5:0.25 --param min_holding 1:5:1 --require-exposure 0.03\naub run --lane ost_v62_unified --run unified_baseline_v2 --config relaxed_entry.yaml --min-exposure 0.05\n```\n\n## Rationale\n\n1. **diag**: Dump raw signals from fold 1 to verify signal generation is working upstream\n2. **sweep**: Parameter search with hard exposure floor — will reject degenerate configs automatically  \n3. **run**: Re-run with relaxed entry thresholds and enforced minimum exposure constraint\n\nIf `--dump-signals` shows no signals generated, problem is upstream (feature/model). If signals exist but no trades, entry thresholds are the culprit.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 35.933,
+      "text": "Your current “champion” run looks degenerate:\n\n- **exposure_min/max: 0.0 / 0.0** → the strategy never takes positions (all weights zero).\n- **degenerate_folds: [1..19]** → every CV fold produced a degenerate solution (often the same root cause: no trades / invalid optimization / all signals filtered out).\n- **worst_mdd: None** also commonly happens when equity curve is flat (no exposure).\n\n### What I need from you to generate the exact “Next Commands”\nPlease paste the **CLI / task runner name** your project uses (e.g., `aub`, `make`, `python -m ...`) and one example command you normally run. The handoff snippet doesn’t include enough to know the correct command syntax.\n\n### In the meantime: the 3 most useful next actions\nThese are the three commands you *want* to run next, conceptually (I can translate into your project’s exact CLI once you tell me the command style):\n\n1) **Run a diagnostics report for why exposure is zero**\n- Check position gating, eligibility filters, risk limits, missing data handling, and whether the model outputs are all-NaN/zeros.\n\n2) **Print per-fold summaries**\n- For each fold: number of tradable timestamps, number of eligible assets, % NaNs in features/preds, number of trades, average gross exposure.\n\n3) **Run a “no constraints / force trade” sanity backtest**\n- Temporarily disable or loosen the constraint that could zero everything out (turnover cap, max leverage, min signal threshold, volatility targeting, transaction cost too high, etc.) to confirm the pipeline can produce non-zero exposure.\n\n### Quick checklist of common causes (so you can spot it fast)\n- Signal column name mismatch → predictions not being read.\n- All predictions clipped to 0 (e.g., post-processing bug, wrong scaling).\n- Universe filter returns empty set (date mismatch, symbol mapping, liquidity filter too strict).\n- Risk model returning NaNs → optimizer falls back to zeros.\n- Transaction cost / slippage set so high optimizer prefers zero.\n- “Only long” with all negative signals (or vice versa) plus “no short” constraint.\n\n### Tell me one of these and I’ll write the **exact 3 lines** for “Next Commands”\n- What command do you usually run to backtest (exact string)?\n- Where do logs/artifacts land (e.g., `runs/…`, `artifacts/…`)?\n- What does “lane_hash: ost_v62_unified” correspond to (a config name/file)?\n\nPaste those and I’ll respond with the **3-line Next Commands** block ready to copy/paste.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 19.841,
+      "text": "python src/ost/generate_lanes.py --version v63 --num_lanes 50 --seed 42\npython src/evaluator.py --lane_hash ost_v63_unified --folds 1-20 --parallel\npython src/champion_update.py --run_hash unified_baseline_v2 --oos_threshold 3.0",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

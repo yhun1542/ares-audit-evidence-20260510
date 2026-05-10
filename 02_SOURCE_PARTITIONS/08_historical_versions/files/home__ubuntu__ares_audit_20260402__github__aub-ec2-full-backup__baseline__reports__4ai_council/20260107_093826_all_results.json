@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260107_093826",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 9.844,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 31.393,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 9.048,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "0c161bf042e6"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 9.844,
+      "text": "# Executing Handoff Commands\n\nRunning the three autopilot commands in sequence:\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\n```\n\n```bash\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\n```\n\n```bash\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n---\n\nPlease share the output from these commands, and I'll:\n\n1. **Analyze results** - Check if any new candidates passed or show improvement\n2. **Update champion** - If a candidate beats the current champion metrics\n3. **Review next_fix.md** - Identify what the system recommends for the next iteration\n4. **Generate new handoff** - With updated status for the next session\n\nWhat output did these commands produce?",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 31.393,
+      "text": "You’re in a clean state: there’s a current champion (`baseline/champion_v5_latest.json`), no PASS candidates queued, and no inconclusive runs blocking you. The “Next Commands” block is exactly what you should do next; here’s what each one will produce and what to check after you run them.\n\n## 1) Run AUB autopilot (module-level search + select best)\n```bash\npython3 experiment_system/tools/aub_autopilot.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --run --select-best\n```\n**Purpose:** Explore/tune module candidates from the registry and (because of `--select-best`) promote the best-scoring module config into whatever “best” pointer/artifact your framework uses.\n\n**After it finishes, capture:**\n- The newly selected “best” module/candidate file path(s)\n- Any summary table (mean/min; tuning + lockbox)\n- Whether the selected-best beats the champion on **lockbox_mean** and **lockbox_min** (min matters a lot for regressions)\n\nIf it *only* improves tuning but not lockbox, treat that as “promising but not ready” and don’t overwrite the champion unless your process explicitly allows it.\n\n## 2) Run system autopilot (full system candidate evaluation)\n```bash\npython3 experiment_system/tools/system_autopilot.py \\\n  --spec experiment_system/config/system_candidates.yaml \\\n  --run\n```\n**Purpose:** Evaluate end-to-end system variants (often combinations of modules, prompts, routing, etc.).\n\n**After it finishes, capture:**\n- The top N system candidates and their tuning/lockbox mean/min\n- Any failure modes flagged (timeouts, invalid outputs, flaky tests)\n- Whether any candidate is **strictly better** than the champion on lockbox (mean and ideally min)\n\n## 3) Generate the “next fix” report (targeted recommendations)\n```bash\npython3 experiment_system/tools/aub_next_fix.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --output baseline/reports/next_fix.md\n```\n**Purpose:** Produce a prioritized fix list based on recent results (often pointing at weakest modules, tests, or bottlenecks).\n\n**After it finishes:**\n- Open `baseline/reports/next_fix.md`\n- Identify the top 1–3 recommended actions (usually the best ROI)\n\n---\n\n# How to decide if you have a new champion\nGiven your current champion metrics:\n- tuning_mean/min: **1.9038 / 0.4315**\n- lockbox_mean/min: **1.7925 / 1.1337**\n\nA replacement should generally:\n1) Improve **lockbox_mean** (primary), and\n2) Not significantly worsen **lockbox_min** (guardrail), ideally improves it.\n\nIf you paste the output summaries from (1) and (2), I can tell you whether anything should be promoted, and if not, which direction to pursue based on the generated `next_fix.md`.\n\nIf you want, paste:\n- the final console summaries from both autopilots, and\n- the first ~30 lines (or the “Top recommendations” section) of `baseline/reports/next_fix.md`.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 9.048,
+      "text": "**Handoff acknowledged: 20260107_093805**\n\n### Summary\n- **Current Champion**: `baseline/champion_v5_latest.json`\n  - Tuning: mean=1.9037589121811982 / min=0.4314655990876186\n  - Lockbox: mean=1.7925403211437954 / min=1.133730704125375\n- **Last PASS Candidate**: None\n- **INCONCLUSIVE**: None\n\n### Next Commands (queued for execution)\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\nStatus: Ready for autopilot cycle. Let me know if you need manual intervention, logs, or analysis!",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

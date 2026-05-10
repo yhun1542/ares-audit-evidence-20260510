@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260105_104248",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 20.257,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 35.052,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 33.853,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 15.446,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "d382554241e2"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 20.257,
+      "text": "# Handoff Analysis\n\n## Summary\nSystem is running healthy at loop 28 with ~45 hours remaining. Champion holds strong position.\n\n## Key Metrics Comparison\n\n| Metric | Champion | Last PASS |\n|--------|----------|-----------|\n| Tuning Mean | **1.904** | 1.762 |\n| Tuning Min | **0.431** | 0.051 ⚠️ |\n| Lockbox Mean | 1.793 | **1.793** |\n| Lockbox Min | 1.134 | **1.347** |\n| Worst MDD | **-9.3%** | -11.2% |\n\n## Assessment\n\n**Champion retains crown** — appropriately so:\n- Better tuning stability (8× higher minimum)\n- Better risk profile (lower MDD)\n- Candidate's 0.05 tuning min suggests potential fragility in certain regimes\n\n**Candidate `exp_macro_alpha_shadow`** passed lockbox but shows:\n- ✅ Improved lockbox minimum (robustness in holdout)\n- ⚠️ Concerning tuning minimum (near-zero in some fold)\n- ⚠️ Worse drawdown characteristics\n\n## Status\n```\n✓ No stuck candidates\n✓ Clean INCONCLUSIVE queue  \n✓ Autopilot commands ready\n✓ ~45h runway remaining\n```\n\n## Recommendation\n**Continue automated loop** — system is functioning correctly. The macro/alpha shadow direction shows promise in lockbox but needs stability improvements before promotion. Next fix report should provide targeted guidance.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 35.052,
+      "text": "## Status interpretation\n\n### Champion (`baseline/champion_v5_latest.json`)\n- **Tuning mean/min:** **1.904 / 0.431** → strong average and decent floor in tuning.\n- **Lockbox mean/min:** **1.793 / 1.134** → solid out-of-sample and acceptable worst-case.\n- **Worst MDD:** **-9.31%** → current drawdown risk ceiling.\n\n### Last PASS candidate (`candidate_20260102_155322_exp_macro_alpha_shadow.json`)\n- **Tuning mean/min:** **1.762 / 0.051** → lower mean and *very fragile* worst fold in tuning (near-zero floor).\n- **Lockbox mean/min:** **1.793 / 1.347** → essentially tied on mean with champion, **better lockbox floor**.\n- **Worst MDD:** **-11.18%** (vs -9.31%) → materially worse drawdown risk.\n\n**Takeaway:** the candidate’s only clear win is **lockbox min**; it gives up **tuning robustness** (min collapses) and **drawdown** (worse worst_mdd). Unless your objective explicitly prioritizes lockbox floor over MDD and tuning stability, it should remain a non-champion PASS (i.e., “interesting but not safer/better overall”).\n\nNo inconclusive items right now.\n\n---\n\n## Recommended next action (runloop)\n\nProceed with the standard 3-command cycle you listed:\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n### What to watch for in the next results\n- Any candidate that improves **lockbox mean** *and* keeps:\n  - **worst_mdd ≥ -9.31%** (no worse than champion), and\n  - **tuning min not collapsing** (avoid near-zero minima like 0.05).\n- If you’re optimizing for “worst-case lockbox fold”, consider explicitly adding a gate like:\n  - “promote only if lockbox_min improves AND worst_mdd does not degrade by more than X.”\n\n---\n\n## One quick clarification\nDo you want **promotion criteria** to be primarily:\n1) maximize lockbox mean (with MDD constraints), or  \n2) maximize lockbox *min* (robust floor), even if worst_mdd worsens?\n\nIf you tell me which, I can suggest concrete selection gates/thresholds for `--select-best` and what `aub_next_fix.md` should prioritize.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 33.853,
+      "text": "**Analysis of Handoff**\n\nThe current iteration compares the **Champion (`v5_latest`)** against the **Candidate (`macro_alpha_shadow`)**.\n\n1.  **Stability Issue**: The candidate exhibits significant instability in the tuning set.\n    *   **Champion Tuning Min**: `0.43`\n    *   **Candidate Tuning Min**: `0.05`\n    *   *Insight*: A tuning minimum of 0.05 suggests the candidate strategy nearly collapsed in at least one fold of the training data, despite having a higher \"Lockbox Min\" (1.34 vs 1.13). This indicates overfitting to the lockbox periods or a \"lucky\" fit on unseen data while being fragile in the training regimes.\n\n2.  **Performance Check**:\n    *   **Champion Mean**: `1.90` > **Candidate Mean**: `1.76`\n    *   **MDD**: Champion (`-9.3%`) is safer than Candidate (`-11.2%`).\n\n**Conclusion**: The candidate `macro_alpha_shadow` fails to displace the champion. The champion remains `v5_latest` due to superior robustness and average performance.\n\n**Next Steps**: Continue the runloop. The autopilot should select the best available model (keeping the current champion) and generate the next set of fixes or experiments.\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 15.446,
+      "text": "### Handoff Acknowledged - 20260105_104205\n\n**Status Update**:\n- **Champion**: `baseline/champion_v5_latest.json` (stable leader; superior tuning min (0.43 vs 0.05), lockbox min (1.13 vs 1.35), and MDD (-0.093 vs -0.099/-0.112)).\n- **Last PASS**: `baseline/candidate_20260102_155322_exp_macro_alpha_shadow.json` (passed but outperformed by champion; notable tuning mean strength but weak min).\n- **INCONCLUSIVE**: None.\n- **Runloop**: Loop 28, elapsed 2h53m, ~1d21h remaining. Last update: 2026-01-05 10:42:05.\n\n**Executing Next Commands**:\n1. `python3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best`\n   - Selecting/promoting best candidate (likely retains `champion_v5_latest.json` based on metrics).\n2. `python3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run`\n   - Generating/running next system candidates (focus: improve MDD stability post-champion lock-in).\n3. `python3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md`\n   - Generating fix report for weak areas (e.g., candidate mins, fold14 MDD).\n\n**Recommendations**:\n- Prioritize MDD hardening (target worst_mdd < -0.09).\n- Explore macro_alpha_shadow hybrids for tuning min uplift.\n- Next handoff expected ~2026-01-05 11:00:00 (post-command completion).\n\n**Next Handoff Trigger**: On new candidate eval or loop 29. Standby.",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

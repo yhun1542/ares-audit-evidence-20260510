@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260106_015959",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.84,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 34.528,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 9.465,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "98afe2133294"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.84,
+      "text": "# Handoff Acknowledged - 20260106_015958\n\n## Summary Assessment\n\n| Metric | Champion (v5) | Last PASS Candidate |\n|--------|---------------|---------------------|\n| Tuning Mean | **1.904** ✓ | 1.762 |\n| Tuning Min | **0.431** | 0.051 ⚠️ |\n| Lockbox Mean | 1.793 | **1.793** (tie) |\n| Lockbox Min | 1.134 | **1.347** ✓ |\n| Worst MDD | **-9.3%** ✓ | -11.2% |\n\n**Status:** Champion v5 holds. The candidate's tuning_min of 0.05 indicates significant regime fragility despite better lockbox floor.\n\n## Ready to Execute\n\n```bash\n# 1. Module-level search\npython3 experiment_system/tools/aub_autopilot.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --run --select-best\n\n# 2. System-level candidates\npython3 experiment_system/tools/system_autopilot.py \\\n  --spec experiment_system/config/system_candidates.yaml \\\n  --run\n\n# 3. Generate fix priorities\npython3 experiment_system/tools/aub_next_fix.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --output baseline/reports/next_fix.md\n```\n\n## Priority Focus Areas\n1. **Fold stability** - Address the 0.05 tuning_min in macro_alpha variants\n2. **MDD control** - Candidate's -11.2% exceeds champion's -9.3%\n3. **Lockbox floor preservation** - Candidate's 1.35 min is worth investigating\n\nShall I proceed with execution?",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 34.528,
+      "text": "Status interpretation and what to do next:\n\n## What the numbers suggest\n\n### Champion (`baseline/champion_v5_latest.json`)\n- **Tuning**: mean **1.904**, min **0.431** → strong and relatively stable across tuning folds.\n- **Lockbox**: mean **1.793**, min **1.134** → good, but the *minimum* lockbox result isn’t as strong as the last candidate’s.\n- **Drawdown**: fold14 / worst **-0.0931** → best drawdown profile of the two shown.\n\n### Last PASS Candidate (`candidate_20260102_155322_exp_macro_alpha_shadow.json`)\n- **Tuning**: mean **1.762**, min **0.0508** → noticeably worse and *very unstable* (near-zero worst tuning fold).\n- **Lockbox**: mean **1.793**, min **1.347** → essentially same mean as champion, but *better worst-case lockbox*.\n- **Drawdown**: fold14 **-0.0997**, worst **-0.1118** → worse drawdowns than champion.\n\n**Overall:** Champion remains the better “default” because it dominates on tuning mean/min and drawdowns, while lockbox mean is basically tied. The candidate looks like it might generalize slightly better in the *worst lockbox slice*, but it pays for that with fragile tuning behavior and worse DD.\n\n## Practical takeaway\n- Keep **champion** as current production baseline.\n- If you want to pursue the candidate’s “better lockbox min” characteristic, the immediate target is: **fix the tuning-fold fragility** without giving back drawdown control.\n\n## Next actions (run as-is)\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n## What I would look for in the upcoming reports\nWhen those complete, the key questions to decide next iteration:\n1. **Which module(s) cause the candidate’s tuning min ~0.05?** (one fold likely collapses due to regime sensitivity, exposure spikes, or an interaction term)\n2. **Do any new candidates improve lockbox min *and* keep worst MDD ≤ ~-0.095?**\n3. **Is the lockbox-min improvement consistent across multiple lockbox partitions, or a single lucky slice?**\n\nIf you paste the output of `baseline/reports/next_fix.md` (or the autopilot summary table), I can point to the most likely failure mode and suggest the smallest change set to target “raise tuning min” while preserving the candidate’s lockbox downside protection.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 9.465,
+      "text": "Understood. Handoff logged:\n\n- **Current Champion**: `baseline/champion_v5_latest.json` (tuning: 1.90/0.43, lockbox: 1.79/1.13, fold14_mdd: -0.093, worst_mdd: -0.093)\n- **Last PASS**: `baseline/candidate_20260102_155322_exp_macro_alpha_shadow.json` (tuning: 1.76/0.05, lockbox: 1.79/1.35, fold14_mdd: -0.100, worst_mdd: -0.112)\n- **Inconclusive**: None\n\nNext commands queued for execution:\n```\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\nAwaiting confirmation or further directives.",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

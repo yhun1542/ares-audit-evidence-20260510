@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_060607",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 19.523,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 43.082,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 11.551,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "9769d546b87c"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 19.523,
+      "text": "# AUB Handoff Analysis\n\n## Diagnosis\n**Critical: Complete baseline failure**\n- All 19 folds degenerate\n- Zero exposure (0.0/0.0) = model producing no positions\n- No champion file generated\n- High OOS metrics are artifacts (no actual trades to measure)\n\nThis is a dead baseline - the unified model isn't generating any signals.\n\n## Root Cause Hypotheses\n1. Feature pipeline returning NaN/zeros\n2. Model threshold too restrictive (no signals pass)\n3. Universe filter eliminating all tickers\n4. Data alignment issue in ost_v62_unified lane\n\n## Next Commands (3 lines)\n\n```\naub diag --lane ost_v62_unified --check features,universe,signals --fold 1\naub run --lane ost_v62_unified --config baseline_relaxed --pos-threshold 0.01\naub run --lane ost_v62_unified --config naive_momentum --bypass-model\n```\n\n## Command Rationale\n1. **diag**: Identify where pipeline breaks (features? universe? signal generation?)\n2. **baseline_relaxed**: Re-run with relaxed position threshold to see if signals exist but are filtered\n3. **naive_momentum**: Bypass ML model entirely with simple momentum baseline to verify data pipeline works\n\n## Success Criteria for Next Run\n- At least 1 non-degenerate fold\n- Exposure > 0 on either side\n- Actual MDD value (not None)",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 43.082,
+      "text": "Your current “champion” looks **non-trading**:\n\n- **exposure_min/max: 0.0 / 0.0** ⇒ the strategy never takes a position.\n- **degenerate_folds: [1..19]** ⇒ every fold likely produced no trades / flat equity, so the OOS metrics (**oos_mean 3.61, oos_min 1.58**) are probably not meaningful (often a symptom of division-by-zero guards, NaNs getting filled, or a scoring path that doesn’t penalize zero exposure).\n\nAlso the `file:` field is empty, so it’s hard to trace artifacts/config.\n\n### What to check next (in priority order)\n1. **Why exposure is always zero**\n   - Entry condition never true (threshold too high, wrong sign, feature all-NaN/constant, gating flag always false).\n   - Risk/position sizing clamps to 0 (vol targeting infinite/NaN, max leverage = 0, min lot size > computed size).\n   - Data alignment bug (signals shifted wrong, timestamps not overlapping, instrument universe empty after filters).\n\n2. **Why folds are “degenerate”**\n   - Confirm per-fold trade count, non-zero weights, and whether scoring penalizes no-trade solutions.\n   - Ensure the backtester is not silently failing and returning zeros.\n\n3. **Artifact traceability**\n   - Ensure the run writes a config snapshot + metrics + fold diagnostics so “file:” isn’t blank.\n\n### Next Commands (3 lines)\nSince your CLI isn’t shown, here are the *intended* three actions—adapt names to your tooling:\n\n1) **Inspect exposure/trades by fold**\n```bash\naub run inspect unified_baseline --lane ost_v62_unified --show exposure,trade_count --folds all\n```\n\n2) **Dump signal + sizing diagnostics (find where it zeros out)**\n```bash\naub run debug unified_baseline --lane ost_v62_unified --trace signal,thresholds,position_size --fold 1\n```\n\n3) **Re-run with a “force-trade” sanity mode (to verify plumbing)**\n```bash\naub run rerun --lane ost_v62_unified --base unified_baseline --set \"entry_threshold=0;min_pos=1\" --tag sanity_force_trade\n```\n\nIf you paste your actual command format (or the repo’s `README`/`--help` output), I can rewrite those into the exact 3-line commands your system expects.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 11.551,
+      "text": "ost_v63_unified_variant1 --seed=123 --features=enhanced\nost_v63_unified_variant2 --seed=456 --regularization=0.1\nost_v63_unified_variant3 --seed=789 --target=oos_max",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

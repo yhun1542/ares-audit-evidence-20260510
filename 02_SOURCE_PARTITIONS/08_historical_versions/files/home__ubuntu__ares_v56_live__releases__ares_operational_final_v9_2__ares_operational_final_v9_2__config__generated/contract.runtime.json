@@ -1,0 +1,372 @@
+{
+  "schema_version": 1,
+  "system": "ares",
+  "env": "prod",
+  "account": "main",
+  "namespace": {
+    "root": "ares:prod:main"
+  },
+  "build": {
+    "app_version": "2026.04.11+sha.final-v9.2",
+    "runtime_schema_version": 1
+  },
+  "policies": {
+    "state_min_hold_ms": {
+      "THROTTLED": 300000,
+      "SELL_ONLY": 600000,
+      "FLAT_ONLY": 900000
+    },
+    "restart_policy": {
+      "blocked_mode_exit": false,
+      "heartbeat_while_blocked": true
+    }
+  },
+  "thresholds": {
+    "rapid_dd_5m": {
+      "throttled": -0.015,
+      "sell_only": -0.025,
+      "flat_only": -0.04
+    },
+    "heartbeat_stale_sec": {
+      "throttled": 10,
+      "sell_only": 30,
+      "flat_only": 60
+    },
+    "anomaly_ratio": {
+      "throttled": 0.2,
+      "sell_only": 0.35,
+      "flat_only": 0.5
+    },
+    "sector_cap": {
+      "single_name": 0.12,
+      "single_sector": 0.2,
+      "hard_trim_sector": 0.25
+    },
+    "executable_cash": {
+      "min_trade_unit_usd": 1000,
+      "safety_buffer_ratio": 0.05
+    }
+  },
+  "broker": {
+    "mode": "kis",
+    "http": {
+      "base_url": "http://127.0.0.1:18080",
+      "timeout_ms": 5000,
+      "auth_header_name": "x-ares-auth",
+      "auth_token_env": "ARES_BROKER_AUTH_TOKEN",
+      "health_path": "/health",
+      "order_path": "/orders"
+    },
+    "paper": {
+      "fill_price": 100,
+      "fill_latency_ms": 0
+    },
+    "kis": {
+      "base_url": "https://openapi.koreainvestment.com:9443",
+      "timeout_ms": 5000,
+      "app_key_env": "ARES_KIS_APP_KEY",
+      "app_secret_env": "ARES_KIS_APP_SECRET",
+      "access_token_env": "ARES_KIS_ACCESS_TOKEN",
+      "personalseckey_env": "ARES_KIS_PERSONALSECKEY",
+      "account_no_env": "ARES_KIS_STOCK_CANO",
+      "account_product_code_env": "ARES_KIS_STOCK_ACNT_PRDT_CD",
+      "custtype": "P",
+      "use_hashkey": true,
+      "hashkey_path": "/uapi/hashkey",
+      "hash_response_path": "HASH",
+      "health_mode": "config",
+      "default_route_profile": "us_equity_order",
+      "route_profile_by_product": {
+        "US_EQUITY": "us_equity_order",
+        "US_OPTION": "us_option_order"
+      },
+      "map_tables": {
+        "kis_overseas_exchange": {
+          "NASDAQ": "NASD",
+          "NASD": "NASD",
+          "NYSE": "NYSE",
+          "AMEX": "AMEX"
+        },
+        "kis_future_option_side": {
+          "BUY": "02",
+          "SELL": "01"
+        },
+        "kis_future_option_price_division": {
+          "LIMIT": "1",
+          "MARKET": "2"
+        }
+      },
+      "route_profiles": {
+        "us_equity_order": {
+          "sample_request_path": "config/vendor-samples/kis-us-equity-order.request.sample.json",
+          "sample_response_path": "config/vendor-samples/kis-us-equity-order.response.sample.json",
+          "order_path": "/uapi/overseas-stock/v1/trading/order",
+          "tr_id_buy": "TTTT1002U",
+          "tr_id_sell": "TTTT1006U",
+          "payload_rules": [
+            {
+              "to": "CANO",
+              "from": "extras.accountNo",
+              "required": true
+            },
+            {
+              "to": "ACNT_PRDT_CD",
+              "from": "extras.accountProductCode",
+              "required": true
+            },
+            {
+              "to": "OVRS_EXCG_CD",
+              "from": "venue",
+              "map": "kis_overseas_exchange",
+              "required": true
+            },
+            {
+              "to": "PDNO",
+              "from": "symbol",
+              "required": true
+            },
+            {
+              "to": "ORD_QTY",
+              "from": "qty",
+              "required": true
+            },
+            {
+              "to": "OVRS_ORD_UNPR",
+              "from": "price",
+              "default": "0"
+            },
+            {
+              "to": "CTAC_TLNO",
+              "from": "metadata.kisContactPhone",
+              "default": ""
+            },
+            {
+              "to": "MGCO_APTM_ODNO",
+              "from": "metadata.kisMgmtOrderNo",
+              "default": ""
+            },
+            {
+              "to": "SLL_TYPE",
+              "from": "extras.kisOverseasSellType"
+            },
+            {
+              "to": "SLL_TYPE",
+              "from": "metadata.kisSellType"
+            },
+            {
+              "to": "ORD_SVR_DVSN_CD",
+              "from": "metadata.kisOrderServerDivision",
+              "default": "0"
+            },
+            {
+              "to": "ORD_DVSN",
+              "from": "metadata.kisOrdDvsn",
+              "default": "00"
+            }
+          ],
+          "response_paths": {
+            "accepted": "rt_cd",
+            "order_id": "output.ODNO",
+            "status": "msg1",
+            "filled_qty": "output.ORD_QTY",
+            "avg_fill_price": "output.OVRS_ORD_UNPR",
+            "message": "msg1"
+          }
+        },
+        "us_option_order": {
+          "sample_request_path": "config/vendor-samples/kis-us-option-order.request.sample.json",
+          "sample_response_path": "config/vendor-samples/kis-us-option-order.response.sample.json",
+          "account_no_env": "ARES_KIS_FUTOPT_CANO",
+          "account_product_code_env": "ARES_KIS_FUTOPT_ACNT_PRDT_CD",
+          "order_path": "/uapi/overseas-futureoption/v1/trading/order",
+          "tr_id_buy": "OTFM3001U",
+          "tr_id_sell": "OTFM3001U",
+          "payload_rules": [
+            {
+              "to": "CANO",
+              "from": "extras.accountNo",
+              "required": true
+            },
+            {
+              "to": "ACNT_PRDT_CD",
+              "from": "extras.accountProductCode",
+              "required": true
+            },
+            {
+              "to": "OVRS_FUTR_FX_PDNO",
+              "from": "symbol",
+              "required": true
+            },
+            {
+              "to": "SLL_BUY_DVSN_CD",
+              "from": "side",
+              "map": "kis_future_option_side",
+              "required": true
+            },
+            {
+              "to": "FM_LQD_USTL_CCLD_DT",
+              "from": "metadata.kisLqdUstlCcldDt",
+              "default": ""
+            },
+            {
+              "to": "FM_LQD_USTL_CCNO",
+              "from": "metadata.kisLqdUstlCcno",
+              "default": ""
+            },
+            {
+              "to": "PRIC_DVSN_CD",
+              "from": "type",
+              "map": "kis_future_option_price_division",
+              "required": true
+            },
+            {
+              "to": "FM_LIMIT_ORD_PRIC",
+              "from": "price",
+              "default": ""
+            },
+            {
+              "to": "FM_STOP_ORD_PRIC",
+              "from": "metadata.kisStopPrice",
+              "default": ""
+            },
+            {
+              "to": "FM_ORD_QTY",
+              "from": "qty",
+              "required": true
+            },
+            {
+              "to": "FM_LQD_LMT_ORD_PRIC",
+              "from": "metadata.kisLqdLimitOrdPric",
+              "default": ""
+            },
+            {
+              "to": "FM_LQD_STOP_ORD_PRIC",
+              "from": "metadata.kisLqdStopOrdPric",
+              "default": ""
+            },
+            {
+              "to": "CCLD_CNDT_CD",
+              "from": "metadata.kisCcldConditionCode",
+              "default": "6"
+            },
+            {
+              "to": "CPLX_ORD_DVSN_CD",
+              "from": "metadata.kisComplexOrderDivision",
+              "default": "0"
+            },
+            {
+              "to": "ECIS_RSVN_ORD_YN",
+              "from": "metadata.kisExerciseReservationYn",
+              "default": "N"
+            },
+            {
+              "to": "FM_HDGE_ORD_SCRN_YN",
+              "from": "metadata.kisHedgeOrderScreenYn",
+              "default": "N"
+            }
+          ],
+          "response_paths": {
+            "accepted": "rt_cd",
+            "order_id": "output.ODNO",
+            "status": "msg1",
+            "filled_qty": "output.FM_ORD_QTY",
+            "avg_fill_price": "output.FM_LIMIT_ORD_PRIC",
+            "message": "msg1"
+          },
+          "symbol_mapper": {
+            "kind": "kis_us_option",
+            "enabled": true,
+            "passthrough_regex": "^(?:[1245])?[A-Z][A-Z0-9]{0,15}[FGHJKMNQUVXZ]\\d{2}\\s+[CP]\\d+(?:\\.\\d+)?$",
+            "accepted_source_formats": [
+              "KIS",
+              "KIS_NO_PREFIX",
+              "OCC_21",
+              "ISO_SPACE",
+              "ISO_DASH",
+              "ISO_SLASH",
+              "METADATA"
+            ],
+            "allow_synthetic_fallback": true,
+            "allow_thursday_shift": true,
+            "strike_min_decimals": 1,
+            "strike_max_decimals": 3,
+            "max_pdno_length": 32,
+            "exact_symbol_map": {
+              "1AALN25 C10.0": "1AALN25 C10.0",
+              "AALJ25 C10.0": "AALJ25 C10.0",
+              "AAL 2025-07-18 C 10": "AALN25 C10.0",
+              "AAPL 2025-07-17 C 210": "AAPLN25 C210.0"
+            }
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "risk_arbiter": {
+      "service_id": "risk-arbiter",
+      "pm2_name": "ares-prod-risk-arbiter",
+      "entry": "dist/apps/risk-arbiter/main.js",
+      "heartbeat_ttl_sec": 15
+    },
+    "market_risk_sensor": {
+      "service_id": "market-risk-sensor",
+      "pm2_name": "ares-prod-market-risk-sensor",
+      "entry": "dist/apps/market-risk-sensor/main.js",
+      "heartbeat_ttl_sec": 15
+    },
+    "health_sentinel": {
+      "service_id": "health-sentinel",
+      "pm2_name": "ares-prod-health-sentinel",
+      "entry": "dist/apps/health-sentinel/main.js",
+      "heartbeat_ttl_sec": 15
+    },
+    "portfolio_risk_engine": {
+      "service_id": "portfolio-risk-engine",
+      "pm2_name": "ares-prod-portfolio-risk-engine",
+      "entry": "dist/apps/portfolio-risk-engine/main.js",
+      "heartbeat_ttl_sec": 15
+    },
+    "preopen_gate": {
+      "service_id": "preopen-gate",
+      "pm2_name": "ares-prod-preopen-gate",
+      "entry": "dist/apps/preopen-gate/main.js",
+      "heartbeat_ttl_sec": 15
+    },
+    "normal_executor": {
+      "service_id": "normal-executor",
+      "pm2_name": "ares-prod-normal-executor",
+      "entry": "dist/apps/normal-executor/main.js",
+      "heartbeat_ttl_sec": 15
+    },
+    "reduce_only_executor": {
+      "service_id": "reduce-only-executor",
+      "pm2_name": "ares-prod-reduce-only-executor",
+      "entry": "dist/apps/reduce-only-executor/main.js",
+      "heartbeat_ttl_sec": 15
+    },
+    "emergency_liquidator": {
+      "service_id": "emergency-liquidator",
+      "pm2_name": "ares-prod-emergency-liquidator",
+      "entry": "dist/apps/emergency-liquidator/main.js",
+      "heartbeat_ttl_sec": 15
+    },
+    "reconciler": {
+      "service_id": "reconciler",
+      "pm2_name": "ares-prod-reconciler",
+      "entry": "dist/apps/reconciler/main.js",
+      "heartbeat_ttl_sec": 15
+    }
+  },
+  "required_services": [
+    "risk-arbiter",
+    "market-risk-sensor",
+    "health-sentinel",
+    "portfolio-risk-engine",
+    "preopen-gate",
+    "normal-executor",
+    "reduce-only-executor",
+    "emergency-liquidator",
+    "reconciler"
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_065031",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 21.252,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 31.066,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 9.101,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "e1c850c28cc9"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 21.252,
+      "text": "## Next Commands (3 lines)\n```\npython3 scripts/diagnose_lane.py --lane=ost_v62_unified --check-degeneracy\npython3 scripts/run_signal.py --lane=ost_v62_unified --signal=momentum_simple --lookback=21 --min-exposure=0.1\npython3 scripts/validate_run.py --lane=ost_v62_unified --compare-baseline\n```\n\n## Rationale\n- **All 19 folds degenerate** with zero exposure indicates the baseline has no active positions\n- First command diagnoses why the unified baseline is producing null signals\n- Second command injects a simple momentum signal with forced minimum exposure to escape degeneracy\n- Third validates whether the new run improves on the (trivially beaten) baseline\n- Priority: establish *any* non-degenerate champion before optimizing OOS metrics",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 31.066,
+      "text": "Your “champion” looks fully degenerate: **exposure_min/max = 0/0** plus **degenerate_folds = [1..19]** means the model/strategy is effectively *never taking risk* in every fold. In that state, the OOS metrics are usually meaningless (you’re evaluating “do nothing” under your scoring).\n\nMost common causes:\n- **Constraints force zero**: position limits, leverage, vol target, turnover cap, drawdown guard, long/short bans, etc. effectively clamp weights to 0.\n- **Signal invalid/empty**: all-NaN after alignment, zscore produces NaNs, lookahead protection drops everything, features missing in OOS, etc.\n- **Post-processing bug**: weight normalization divides by 0, clipping wipes everything, transaction cost model rejects all trades, gating condition always false.\n\nI can give *exact* “Next Commands (3 lines)” if you paste what tool/CLI you’re using (the last few commands you ran, or `--help` output). For now, here’s a safe 3-line template you can adapt to your CLI:\n\n1) **Inspect why exposure is zero (constraints + gating):**\n```bash\n<runner> inspect --lane ost_v62_unified --run unified_baseline --report constraints,gates,weights --folds 1-19\n```\n\n2) **Validate signal/weights are nonzero pre-constraints (and not NaN):**\n```bash\n<runner> debug-weights --lane ost_v62_unified --run unified_baseline --stage pre_constraints --stats nz_frac,nan_frac,abs_sum --folds 1-19\n```\n\n3) **Rerun with constraints temporarily relaxed to confirm the root cause:**\n```bash\n<runner> train --lane ost_v62_unified --from unified_baseline --set \"risk.enable=false\" --tag diag_relaxed_constraints\n```\n\nIf you paste the actual command names your framework uses (e.g., `make …`, `python -m …`, `invoke …`, `ray …`), I’ll rewrite those three lines precisely for your environment and suggest the *minimum* constraint(s) to toggle first.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 9.101,
+      "text": "submit run --lane ost_v62_unified --strategy improved_baseline --seed 42\nanalyze degenerate_folds --target oos_mean > 4.0\nschedule retrain --use oos_data --folds 20-30",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

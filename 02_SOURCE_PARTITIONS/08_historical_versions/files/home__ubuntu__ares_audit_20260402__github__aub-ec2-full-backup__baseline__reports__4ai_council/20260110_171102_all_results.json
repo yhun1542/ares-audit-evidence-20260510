@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260110_171102",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 14.749,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 28.398,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 15.678,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "833b858825a1"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 14.749,
+      "text": "# Handoff Acknowledged\n\n## Status Summary\n\n| Metric | Value |\n|--------|-------|\n| Champion | `champion_v5_latest.json` |\n| Tuning Mean | 1.904 |\n| Lockbox Mean | 1.793 |\n| Loop Count | 311 |\n| Time Remaining | ~14h 39m |\n\n## Observations\n\n- **No PASS candidates** - system appears to be in a plateau phase\n- **311 loops** completed without dethroning current champion\n- **Lockbox variance** notable: min (1.13) vs mean (1.79) suggests performance instability on some cases\n\n## Proceeding with Next Commands\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\n```\n\n```bash\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\n```\n\n```bash\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n---\n\n**Ready to execute.** Should I run these commands and report results, or would you like to adjust the experiment strategy given the plateau at 311 loops?",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 28.398,
+      "text": "Proceed with the runloop using the provided “Next Commands” in order. Given there are no PASS candidates and nothing currently INCONCLUSIVE, the goal is to (1) run selection to see if anything can beat the current champion, (2) run system-level candidates, and (3) generate the next targeted fix report.\n\n## 1) Run AUB autopilot (module-level) and select best\n```bash\npython3 experiment_system/tools/aub_autopilot.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --run --select-best\n```\nWhat to look for afterward:\n- Whether any candidate is promoted (new “Current Champion” or a PASS entry appears).\n- Compare both **tuning_mean/min** and **lockbox_mean/min** against the current champion:\n  - Current champion tuning_mean: **1.9038** (lower is better if these are loss-like; higher is better if score-like—use your framework’s convention)\n  - Current champion lockbox_mean: **1.7925**\n- If the tool prints a “selected best” but doesn’t promote: note why (e.g., regression on lockbox, min bound violation, insufficient significance).\n\n## 2) Run system autopilot (system-level candidates)\n```bash\npython3 experiment_system/tools/system_autopilot.py \\\n  --spec experiment_system/config/system_candidates.yaml \\\n  --run\n```\nWhat to look for afterward:\n- Any system candidate producing a consistent improvement on **lockbox_mean** without harming tuning (or vice versa, depending on gating rules).\n- Any failures that indicate flaky tests, timeouts, or invalid configs—these will feed directly into “next_fix”.\n\n## 3) Generate next targeted fix suggestions\n```bash\npython3 experiment_system/tools/aub_next_fix.py \\\n  --registry experiment_system/config/module_registry.yaml \\\n  --output baseline/reports/next_fix.md\n```\nThen open:\n```bash\nsed -n '1,200p' baseline/reports/next_fix.md\n```\nUse this report to decide whether to:\n- Patch a specific module (most common when you have repeated near-misses or consistent lockbox regressions), or\n- Adjust candidate generation/spec constraints if the search is stuck.\n\n## If you paste results, I’ll decide next steps\nPaste (or summarize) the stdout + any new “Current Champion / PASS / INCONCLUSIVE” block after running steps 1–3, plus any key lines from `baseline/reports/next_fix.md`. I’ll then recommend whether to:\n- Promote a candidate,\n- Rerun with different selection/gating,\n- Or implement the next fix and queue the next loop.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 15.678,
+      "text": "This appears to be an automated handoff/status report from an AI/model tuning experiment runloop (likely involving AUB or similar benchmarking tools). Here's a quick summary:\n\n### Key Highlights\n- **Current Champion**: `baseline/champion_v5_latest.json`\n  - Tuning: mean 1.904 / min 0.431\n  - Lockbox: mean 1.793 / min 1.134\n- **Candidates**: No PASS candidates; nothing inconclusive.\n- **Next Steps**: Run the 3 queued commands:\n  1. `python3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best`\n  2. `python3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run`\n  3. `python3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md`\n- **Runloop**: 311 loops complete; ~1d 9h elapsed; ~14h 39m remaining (as of 2026-01-10 17:10:33).\n\nIf this is part of a live system and you need me to simulate/analyze outputs, generate a mock report, or assist with debugging the pipeline, let me know specifics! 🚀",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

@@ -1,0 +1,152 @@
+# ============================================================================
+# ARES SSOT Source-Ownership Contract
+# ----------------------------------------------------------------------------
+# This file is the authoritative declaration of WHO owns each SSOT Redis key.
+# If a key appears here, exactly one process MUST be writing it within
+# `max_age_sec`, and its health/heartbeat key MUST be within `heartbeat_ttl`.
+#
+# The ssot-source-owner-guard daemon reads this file every minute and
+# Fail-Louds + Auto-Heals via PM2 when a contract is violated.
+#
+# Keys NOT listed here are not considered SSOT-critical; do not add noise.
+# ============================================================================
+
+version: 1.0.0
+updated: 2026-04-21
+
+defaults:
+  # Cooldown between successive auto-heal attempts for the same owner
+  heal_cooldown_sec: 120
+  # Max consecutive auto-heals before backing off to manual alert only
+  heal_max_consecutive: 3
+  # Alert key prefix written by owner-guard on violations
+  alert_key_prefix: "ssot:owner_guard:alert"
+  heartbeat_key_prefix: "ssot:source"
+
+owners:
+
+  # --------------------------------------------------------------------------
+  # Layer A: champion engine producer -> final-to-champion-bridge
+  # --------------------------------------------------------------------------
+  final-to-champion-bridge:
+    description: >-
+      Node.js bridge v3. Every ~5s writes per-symbol weights into the
+      champion:targets:ssot HASH, and signals:ssot:latest.
+    pm2_name: final-to-champion-bridge
+    keys:
+      - key: champion:targets:ssot
+        type: hash
+        max_age_sec: 120
+        min_size: 20          # hash must have at least 20 entries
+      - key: champion:targets:ssot:ts
+        type: string
+        max_age_sec: 120
+      - key: signals:champion:last_ts
+        type: string
+        max_age_sec: 600
+    heartbeat:
+      # This upstream process does not expose its own heartbeat key yet, so
+      # we infer liveness from champion:targets:ssot:ts freshness above.
+      inferred_from: champion:targets:ssot:ts
+    heal:
+      # Restart via PM2. autorestart is assumed true, but a stuck event-loop
+      # is fixed by pm2 restart.
+      action: pm2_restart
+      target: final-to-champion-bridge
+
+  # --------------------------------------------------------------------------
+  # Layer B: ssot target router -> ares-upstream-ssot-router v4
+  # --------------------------------------------------------------------------
+  ares-upstream-ssot-router:
+    description: >-
+      Python v4 daemon that reads champion:targets:ssot (hash) and publishes
+      SSOT_TARGET_V2 payloads to both engine_src and exec_src.
+    pm2_name: ares-upstream-ssot-router
+    keys:
+      - key: ssot:target:v2:engine_src
+        type: string
+        max_age_sec: 900
+        min_ttl_sec: 1          # MUST have a TTL (no persistent ghost)
+      - key: ssot:target:v2:exec_src
+        type: string
+        max_age_sec: 600
+        min_ttl_sec: 1
+    heartbeat:
+      key: ssot:source:router:heartbeat
+      heartbeat_ttl: 120
+      max_age_sec: 120
+    heal:
+      action: pm2_restart
+      target: ares-upstream-ssot-router
+
+  # --------------------------------------------------------------------------
+  # Layer C: SSOT writer (canary)
+  # --------------------------------------------------------------------------
+  ssot-writer-v2:
+    description: >-
+      Python v2 writer. Publishes ssot:target:v2:canary and reports health.
+    pm2_name: ssot-writer-v2
+    keys:
+      - key: ssot:target:v2:canary
+        type: string
+        max_age_sec: 120
+        min_ttl_sec: 1
+      - key: ssot:writer:v2:health
+        type: string
+        max_age_sec: 120
+      - key: ssot:writer:v2:last_status
+        type: string
+        max_age_sec: 300
+    heartbeat:
+      inferred_from: ssot:writer:v2:health
+    heal:
+      action: pm2_restart
+      target: ssot-writer-v2
+
+  # --------------------------------------------------------------------------
+  # Layer D: SSOT promote (canary -> current)
+  # --------------------------------------------------------------------------
+  ssot-promote-v2:
+    description: >-
+      Python v2 promoter. Promotes canary to current, legacy_current, ts.
+    pm2_name: ssot-promote-v2
+    keys:
+      - key: ssot:target:v2:current
+        type: string
+        max_age_sec: 240
+        min_ttl_sec: 1        # never -1; that's a contract break
+      - key: ssot:target:v2:ts
+        type: string
+        max_age_sec: 240
+        min_ttl_sec: 1
+      - key: ssot:promote:v2:health
+        type: string
+        max_age_sec: 180
+      - key: ssot:promote:v2:last_status
+        type: string
+        max_age_sec: 600
+    heartbeat:
+      inferred_from: ssot:promote:v2:health
+    heal:
+      action: pm2_restart
+      target: ssot-promote-v2
+
+  # --------------------------------------------------------------------------
+  # Layer E: SSOT pipeline guard (observer-of-observers)
+  # --------------------------------------------------------------------------
+  ssot-pipeline-guard:
+    description: >-
+      Python v4 guard. Checks semantic health of writer + promote and
+      publishes ssot:guard:v4:heartbeat.
+    pm2_name: ssot-pipeline-guard
+    keys:
+      - key: ssot:guard:v4:heartbeat
+        type: string
+        max_age_sec: 180
+    heartbeat:
+      key: ssot:guard:v4:heartbeat
+      heartbeat_ttl: 180
+      max_age_sec: 180
+    heal:
+      action: pm2_restart
+      target: ssot-pipeline-guard

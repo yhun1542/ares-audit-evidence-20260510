@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_060404",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 20.701,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 36.819,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 13.036,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "9769d546b87c"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 20.701,
+      "text": "# AUB Handoff Analysis\n\n## Diagnosis\n**Critical failure state**: All 19 folds degenerate with 0.0/0.0 exposure. The unified baseline is producing zero positions—complete model collapse or initialization failure.\n\n## Root Cause Hypotheses\n1. Signal thresholds too restrictive (nothing passes)\n2. Weight initialization collapsed to zeros\n3. Data pipeline issue (empty features reaching model)\n4. Position sizing returning zero universally\n\n## Next Commands\n\n```bash\npython -m diagnose_zero_exposure --lane ost_v62_unified --run unified_baseline\npython -m reset_baseline --lane ost_v62_unified --fallback default_weights\npython -m run_cv --lane ost_v62_unified --config baseline_v1 --validate-exposure\n```\n\n## Recommended Priority Actions\n1. **Diagnose** why exposure=0 before proceeding (check signal distributions, threshold values)\n2. **Reset** to last known working weight configuration\n3. **Add guard**: fail-fast if fold exposure < 0.01 to catch degeneracy early\n\nThis baseline cannot serve as a valid champion—no trades means no valid Sharpe comparison possible.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 36.819,
+      "text": "Your “Current Champion” is effectively a no-trade / no-signal model:\n\n- **exposure_min/max: 0.0 / 0.0** ⇒ it never takes positions.\n- **degenerate_folds: [1..19]** ⇒ every CV fold is degenerate (typically means predictions are constant, labels are constant after filtering, or the trading layer rejects all signals).\n- **worst_mdd: None** is consistent with “no trades”.\n\nSo the next thing isn’t to “tune” yet—it’s to find why the pipeline is producing zero exposure.\n\n## What to do next (the 3 most useful commands to run)\nI don’t know your exact CLI, so here are the *three actions* you should execute in your environment (whatever the equivalent commands are):\n\n1) **Dump per-fold diagnostics (predictions + label stats + trade counts)**\n- For each fold: number of samples, label distribution, prediction mean/std, number of non-zero positions, number of executed trades, number of rejected orders.\n- Goal: confirm whether degeneracy is happening at the **model output** (constant preds) or at the **execution layer** (signals filtered out).\n\n2) **Run a “no filters / forced execution” sanity backtest**\n- Temporarily disable: confidence thresholds, volatility gates, min-hold constraints, liquidity/borrow constraints, position rounding-to-zero, max-spread filters, etc.\n- Goal: if exposure becomes non-zero, the issue is in **gating/constraints**; if still zero, issue is in **signal generation**.\n\n3) **Train a trivial baseline to validate the data path**\n- Examples: `y_pred = zscore(next_return)` (oracle-like), or `y_pred = momentum_1d`, or a tiny linear model with 1–3 obvious features.\n- Goal: if even a trivial baseline yields zero exposure/degenerate folds, you likely have a **label alignment / masking / NaN / time index** problem.\n\n## Most common root causes (ranked)\n1) **All predictions become 0/NaN after standardization/clipping** (e.g., division by near-zero std per fold).\n2) **All rows dropped** in each fold due to NaNs, lookahead guards, or overlap/embargo logic.\n3) **Trade threshold too high** (e.g., `abs(pred) > threshold` never true).\n4) **Position sizing rounds to zero** (e.g., integer shares with small capital or min lot size).\n5) **Universe empty** after filters in OOS windows (liquidity/price/borrow/halt filters).\n6) **Label is constant or missing in each OOS segment** due to misalignment.\n\n## If you paste one thing, I can give exact “Next Commands”\nPaste either:\n- your repo’s CLI help / the script names, or\n- the last ~50 lines of the run log around fold evaluation / execution.\n\nThen I’ll translate the three actions above into the exact 3 command lines your system expects under “Next Commands”.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 13.036,
+      "text": "train --strategy rl_ppo_v1 --folds '[1-5]' --epochs 1000 --lr 1e-4\ntrain --strategy rl_ppo_v2 --folds '[6-10]' --epochs 1000 --lr 5e-5 --entropy_coef 0.01\ntrain --strategy rl_a2c_v1 --folds '[11-19]' --epochs 1500 --lr 7e-5 --n_steps 512",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

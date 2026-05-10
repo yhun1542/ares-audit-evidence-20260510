@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_123559",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 16.825,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 29.66,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 46.006,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 11.753,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "2887c5af983d"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 16.825,
+      "text": "# AUB HANDOFF Analysis\n\n## Status Assessment\n⚠️ **Multiple Red Flags Detected:**\n- No champion file specified\n- 4/10 degenerate folds (40%) — excessive\n- oos_mean of 3.32 is suspiciously high (likely artifact)\n- Missing worst_mdd, lane_hash, run_hash suggests incomplete run\n\n## Next Commands (3 lines)\n\n```\nDIAG degenerate_folds --verbose\nRETRY --lane=current --seed=42\nHOLD until valid_champion\n```\n\n## Rationale\n1. **DIAG**: Investigate why folds 1,2,3,8 are degenerate — possible data leak, insufficient samples, or feature collapse\n2. **RETRY**: Re-run with fixed seed since current state lacks valid file/hashes\n3. **HOLD**: Block promotion until a legitimate champion with <2 degenerate folds emerges\n\nThe 3.32 oos_mean with 40% degenerate folds strongly suggests the metric is computed only on surviving folds, creating survivorship bias. Do not promote.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 29.66,
+      "text": "I can’t generate the exact 3 CLI lines without knowing what tool/entrypoint your “AUB” runner uses (and the **champion file path is blank**), but the next three actions you want are clearly:\n\n1) **Recompute missing risk metric (worst_mdd) and persist a full eval artifact**  \n2) **Diagnose the degenerate folds (1,2,3,8)** to see if they’re empty, constant targets, NaNs, or exposure stuck at 0  \n3) **Run a constrained re-sweep** targeting slightly higher OOS mean while preventing exposure degeneracy\n\nHere are **three placeholder command lines** you can adapt to your actual CLI/module names:\n\n```bash\naub eval --model <CHAMPION_PATH> --oos --risk mdd --dump artifacts/champion_eval.json\naub folds diagnose --model <CHAMPION_PATH> --folds 1,2,3,8 --dump artifacts/degenerate_folds_report.json\naub sweep --base <CHAMPION_PATH> --constraints \"exposure_max<=0.85,exposure_min>=0.02\" --seeds 20 --promote-if-better\n```\n\nIf you tell me the actual command pattern you’re using (e.g., `python -m ...`, `make ...`, etc.) and where the champion artifact lives, I’ll rewrite these as the exact **3 lines** for your repo.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 46.006,
+      "text": "```bash\npython3 train.py --config config_v4.json --fix_degenerate_folds\npython3 evaluate.py --min_sharpe 1.0 --max_drawdown 0.15\npython3 promote_champion.py --overwrite_empty\n```",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 11.753,
+      "text": "candidate_gen --n_candidates 16 --min_improvement 0.1 --avoid_degenerate [1,2,3,8]\nparallel_backtest --candidates candidates_20260103_123516.json --folds all --exposure_cap 0.9\npromote_champion_if_beats --oos_mean 3.5 --mdd_threshold -0.1 --run_hash {lane_hash}",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

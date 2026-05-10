@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260105_203000",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 20.539,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 39.542,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 70.705,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 24.296,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "4175713db9ba"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 20.539,
+      "text": "# Handoff Analysis\n\n## Summary\n\nThe optimization loop is running smoothly at **119 iterations** with ~1.5 days remaining.\n\n## Key Observations\n\n| Metric | Champion | Last PASS Candidate | Assessment |\n|--------|----------|---------------------|------------|\n| Tuning Mean | **1.904** | 1.762 | Champion wins |\n| Tuning Min | **0.431** | 0.051 | Champion much safer |\n| Lockbox Mean | 1.793 | **1.793** | Tie |\n| Lockbox Min | 1.134 | **1.347** | Candidate more consistent |\n| Worst MDD | **-9.3%** | -11.2% | Champion wins |\n\n## Analysis\n\n**Why candidate passed but didn't become champion:**\n- The `tuning_min = 0.05` is a **red flag** — some fold nearly broke even, suggesting regime fragility\n- Worse drawdown profile (-11.2% vs -9.3%)\n- Despite better lockbox consistency, in-sample instability suggests overfitting risk\n\n**Positive signal:** The `exp_macro_alpha_shadow` experiment shows promise for lockbox robustness. The macro/alpha shadow approach may be worth further tuning with tighter constraints.\n\n## Recommended Next Session Focus\n\n1. **Execute the 3 suggested commands** — let the autopilot continue searching\n2. **Review `next_fix.md`** output for specific parameter recommendations\n3. **Consider hybrid:** Blend champion's stability with candidate's lockbox consistency\n\n## Health Check ✓\n- Loop running normally\n- No INCONCLUSIVE backlog\n- Champion remains robust\n- Search space being explored systematically",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 39.542,
+      "text": "### Status snapshot (what it means)\n\n- **Champion (`baseline/champion_v5_latest.json`)**\n  - **Tuning**: mean **1.9038** / min **0.4315** (strong overall, decent floor)\n  - **Lockbox**: mean **1.7925** / min **1.1337** (stable; good minimum)\n  - **Worst MDD**: **-0.0931** (best drawdown profile among shown)\n\n- **Last PASS candidate (`candidate_20260102_155322_exp_macro_alpha_shadow.json`)**\n  - **Tuning**: mean **1.7618** / min **0.0508** (lower mean and *very* fragile worst fold)\n  - **Lockbox**: mean **1.7927** / min **1.3469** (slightly higher mean and much better minimum than champ)\n  - **Worst MDD**: **-0.1118** (worse drawdown than champ)\n\n**Interpretation:**  \nYour “PASS candidate” looks like it generalizes at least as well (lockbox mean essentially equal/slightly higher, lockbox min better), but it’s **riskier**: significantly worse drawdown and a very weak tuning min suggests potential overfit or regime sensitivity. If your selection criteria prioritize **worst MDD**, the champion still dominates.\n\n---\n\n### What I would do next (in order)\n\n1) **Run AUB autopilot (module-level) and select-best**\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\n```\n- Goal: see if any module variant beats champion on **both** lockbox and drawdown constraints, or improves lockbox min without sacrificing worst MDD.\n\n2) **Run system autopilot (full system candidates)**\n```bash\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\n```\n- Goal: discover integrated candidates where interactions improve stability (often where module-level gains don’t translate).\n\n3) **Generate next-fix report**\n```bash\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n- Goal: automatically identify the highest-leverage failure modes (e.g., which folds drive the tuning min collapse, which modules correlate with worst MDD).\n\n---\n\n### Decision rule suggestion (so “PASS” doesn’t regress risk)\n\nGiven your current numbers, I’d enforce something like:\n\n- **Lockbox mean ≥ champion lockbox mean - small epsilon** (e.g., 0.01)\n- **Lockbox min ≥ champion lockbox min** (stability requirement)\n- **Worst MDD ≥ champion worst MDD** (i.e., not more negative), unless you explicitly allow risk-up\n- If a candidate wins only on lockbox mean but loses on worst MDD, treat as **“risk-on alternative”** rather than replacement champion.\n\nRight now, the PASS candidate fails that last condition.\n\n---\n\n### One thing to sanity-check immediately\n\nThat **tuning min = 0.0508** is a red flag. Before promoting anything like it, I’d want the next-fix report (or manual check) to answer:\n- Which fold(s)/period(s) produce the collapse?\n- Is it a specific market regime, a data gap, or a parameter boundary effect?\n- Does the candidate rely on a small number of outsized winners (fat-tail dependence)?\n\n---\n\nIf you paste the output summary from the first command (the candidates table + selection decision), I can help you decide whether the auto-selected best should replace the champion or be tracked as a risk-on branch.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 70.705,
+      "text": "The `candidate_20260102_155322_exp_macro_alpha_shadow` failed to displace the champion `champion_v5_latest`. While it showed improved lockbox robustness (Min: 1.34 vs 1.13), its tuning stability collapsed (Min: 0.05 vs 0.43), and it incurred a higher maximum drawdown. This suggests the \"shadow\" macro alpha is overfitting or highly sensitive to specific regimes.\n\nTo address the stability issue while attempting to capture the robustness benefits, the next experiment will introduce **Volatility Parity** sizing. This mechanism inversely scales position sizes based on realized volatility, which should prop up the minimum tuning score during high-volatility drawdowns and smooth out the equity curve.\n\nI will generate the configuration for this new experiment and then execute the standard autopilot sequence.\n\n```yaml\n# experiment_system/config/system_candidates.yaml\nexperiments:\n  - name: candidate_20260105_vol_parity_stabilizer\n    base_strategy: baseline/champion_v5_latest.json\n    description: \"Apply Volatility Parity sizing to improve tuning_min stability.\"\n    modifications:\n      - target: \"position_sizing\"\n        action: \"update\"\n        params:\n          method: \"volatility_parity\"\n          lookback: 20\n          target_volatility: 0.12\n          max_leverage: 1.5\n```\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 24.296,
+      "text": "### Status Summary\n- **Current Champion** (`baseline/champion_v5_latest.json`): Strong performance with high tuning mean (1.90), solid mins across tuning (0.43) and lockbox (1.13). MDD stable at -0.093 (best in fold14 and worst case).\n- **Last PASS Candidate** (`baseline/candidate_20260102_155322_exp_macro_alpha_shadow.json`): Comparable lockbox mean (1.79), slightly better lockbox min (1.35), but weaker tuning min (0.05) and worse MDD (-0.099 fold14, -0.112 worst).\n- **No INCONCLUSIVE candidates**.\n- **Recommendation**: Champion holds due to superior tuning stability and MDD. Monitor lockbox min improvement in candidates.\n\n### Runloop Overview\n| Metric       | Value                          |\n|--------------|--------------------------------|\n| Started     | 2026-01-05 07:48:39            |\n| Elapsed     | 12:37:43                       |\n| Remaining   | 1 day, 11:22:16                |\n| Loop Count  | 119                            |\n| Last Update | 2026-01-05 20:26:23            |\n\n### Next Actions (Auto-Execute Ready)\nRun the provided commands in sequence:\n1. `python3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best`\n2. `python3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run`\n3. `python3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md`\n\n**Priority**: Focus on improving worst MDD (target < -0.10 avoidance) and tuning min (>0.50). If lockbox min trends up, re-evaluate candidate promotion. System stable—continue autopilot.",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

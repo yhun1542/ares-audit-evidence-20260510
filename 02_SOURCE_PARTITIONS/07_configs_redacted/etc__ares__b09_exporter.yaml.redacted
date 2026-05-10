@@ -1,0 +1,51 @@
+# ============================================================================
+# B09 Prometheus Exporter — 설정 템플릿 (v1.0.0)
+# ============================================================================
+
+redis:
+  url: ""
+  host: "127.0.0.1"
+  port: 6379
+  db: 0
+  use_tls: false
+  password_env: "ARES_REDIS_PASSWORD"
+  password_file: ""
+  socket_timeout_sec: 3.0
+
+# HTTP 서버 설정.
+# 중요: 기본 bind 는 127.0.0.1. 외부 노출은 VPC 내부 SG + SSL 프록시 앞에서만.
+bind_host: "127.0.0.1"
+bind_port: 9464
+
+# Prometheus 가 /metrics 를 잦게 때리더라도 내부 Redis SCAN 은
+# scrape_cache_sec 초 단위로 재사용된다. Prometheus scrape_interval >= 15s 권장.
+scrape_cache_sec: 3.0
+
+# 라벨 값 카디널리티 상한 (심볼 폭주 보호).
+# 54~60 심볼 기준 여유 확보. 실제 심볼 수에 따라 조정.
+cardinality_limit_per_metric: 120
+
+# PM2 지표 수집 여부 및 바이너리 경로.
+collect_pm2: true
+pm2_binary: "/usr/bin/pm2"
+
+# B02 상태 키에서 age_sec 를 data freshness 게이지로 발행.
+# 심볼당 1 row 이므로 cardinality_limit 내에서 제한됨.
+publish_data_age_from_b02: true
+
+log_level: "INFO"
+
+# 관측 대상 사이드카 목록. heartbeat 는 HASH(ts_ms 필드) 우선, 문자열(JSON/scalar) fallback 으로 읽는다.
+# 존재하지 않는 경로는 건너뛰므로 과도 등록해도 안전.
+sidecars:
+  - name: "b02"
+    heartbeat_key: "addon:b02:heartbeat"
+    stale_events_hash: "addon:b02:metrics"
+    status_key_pattern: "addon:b02:status:*"
+  - name: "b05"
+    heartbeat_key: "addon:b05:heartbeat"
+  # 향후 구현 시 채워 넣을 것:
+  # - name: "b03"
+  #   heartbeat_key: "addon:b03:heartbeat"
+  # - name: "b12"
+  #   heartbeat_key: "addon:b12:heartbeat"

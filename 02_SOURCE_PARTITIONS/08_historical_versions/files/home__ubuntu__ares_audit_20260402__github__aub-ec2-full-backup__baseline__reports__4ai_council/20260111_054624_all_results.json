@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_054624",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.456,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 176.208,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 10.771,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "a720fffc0719"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.456,
+      "text": "## Analysis\n\n**Critical Issue**: Complete strategy degeneration\n- All 19 folds degenerate\n- Zero exposure (0.0/0.0) = strategy takes no positions\n- OOS metrics are meaningless artifacts of null predictions\n\n## Next Commands (3 lines)\n\n```\naub diagnose --lane ost_v62_unified --check-features --verbose\naub reset --lane ost_v62_unified --seed random --force\naub run --lane ost_v62_unified --min-exposure 0.05 --penalize-null\n```\n\n## Rationale\n\n1. **diagnose**: Verify feature pipeline isn't producing NaN/constant values that force null predictions\n2. **reset**: Clear degenerate champion and reinitialize with random seed (current state is unrecoverable)\n3. **run**: Restart with exposure floor constraint to prevent optimizer from converging on \"do nothing\" local minimum\n\nIf features check clean, root cause is likely fitness function rewarding stability over returns—the `--penalize-null` flag should add exposure penalty term.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 176.208,
+      "text": "Your current “champion” looks degenerate: **exposure_min/max = 0.0 / 0.0** means it never takes risk (no positions), and **degenerate_folds = [1..19]** indicates essentially every fold collapsed (often due to no valid trades, NaNs, constraints eliminating all candidates, or a bug in signal→position mapping). In that state, **oos_mean/min are not meaningful** as performance measures.\n\nI also see: **“Next Commands (3 lines)”** but the three lines aren’t included. Paste those and I’ll execute/translate them into the exact next steps.\n\nMeanwhile, the fastest triage checks (in order):\n\n1) **Confirm positions are being generated**\n   - Count nonzero weights/exposure per date.\n   - Check if a gating rule (threshold, top-K, volatility filter, liquidity filter) is filtering everything out.\n\n2) **Check constraints that can force all-zero**\n   - Gross/net exposure limits, leverage caps, min position size, integer lots, borrow availability, long-only/short-only conflicts.\n\n3) **Verify label/feature alignment & NaNs**\n   - If features/returns are misaligned, the model may output NaNs or zeros.\n   - Ensure after all joins/shift operations you still have enough rows per fold.\n\n4) **Inspect fold-by-fold diagnostics**\n   - For each fold: number of assets, number of tradable dates, number of trades, average abs weight, % days with any position.\n\nIf you paste:\n- the **3 “Next Commands” lines**, and\n- the config bits that define **signal → weights** (topK/threshold, exposure constraints, rebalance schedule),\nI can pinpoint why exposure is stuck at zero and propose a concrete fix.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 10.771,
+      "text": "python src/train.py --lane ost_v63_unified --run alpha_search --seed 42 --folds 1-10\npython src/train.py --lane ost_v63_unified --run beta_search --seed 123 --folds 11-19 --lr 0.001\npython src/train.py --lane ost_v64_experimental --run gamma_baseline --seed 777 --epochs 200 --dropout 0.2",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_111746",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 18.786,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 176.655,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 34.26,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 10.352,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "e4090fbb231a"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 18.786,
+      "text": "# AUB Handoff Analysis\n\n## Status Assessment: ⚠️ CONCERN\n\n| Metric | Value | Status |\n|--------|-------|--------|\n| OOS Mean | 3.32 | 🟡 Suspiciously high |\n| OOS Min | -0.026 | 🟢 Acceptable |\n| Degenerate Folds | 4/~10 | 🔴 40% failure rate |\n| Champion File | Empty | 🔴 Missing |\n| Exposure Max | 83.9% | 🟢 Within bounds |\n\n## Critical Issues\n\n1. **No champion file recorded** - provenance broken\n2. **4 degenerate folds** [1,2,3,8] - strategy likely over-constrained or data issues in those periods\n3. **Missing MDD** - risk metrics incomplete\n4. **No lane/run hashes** - tracking disabled or failed\n\n## Recommended Next Commands\n\n```\nDIAGNOSE --degenerate-folds\nRELAX --fold-threshold 0.3\nCONTINUE\n```\n\n## Rationale\n\nThe high degeneracy rate (40%) suggests the current parameter space is too restrictive for certain market regimes. Before continuing blind iteration, diagnose why folds 1,2,3,8 specifically are failing—likely correlated time periods with specific characteristics (low vol? trending? gap-heavy?).\n\nThe suspiciously high OOS mean (3.32) combined with missing champion file suggests the metric may be computed from surviving folds only, creating survivorship bias.\n\n---\n\n**Handoff complete** — 37 loops / ~3.5h elapsed / ~1.8d remaining",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 176.655,
+      "text": "Your handoff snapshot is basically saying: the current “champion” model/recipe is scoring well on average out-of-sample, but there are some red flags that you should probably investigate before you trust it or promote it.\n\n## What this snapshot implies\n\n- **Champion file: empty**\n  - Either the champion artifact wasn’t persisted, the path didn’t get captured, or you’re running “in-memory champion only.” This is worth fixing so you can reproduce the result.\n\n- **OOS metrics**\n  - `oos_mean: 3.3249` looks strong (depending on your metric definition).\n  - `oos_min: -0.0257` means at least one evaluation slice/fold went slightly negative. Not necessarily fatal, but it indicates instability or regime dependence.\n\n- **`degenerate_folds: [1, 2, 3, 8]`**\n  - This is the biggest concern. “Degenerate” usually means one of:\n    - no trades / all-zero exposure,\n    - NaNs/infs in features/targets,\n    - fold has too little data after filtering,\n    - constraints force a trivial solution,\n    - leakage/label alignment issues causing invalid training.\n  - With 4 degenerate folds, your `oos_mean` may be inflated or not comparable to other candidates.\n\n- **Exposure range**\n  - `exposure_min/max: 0.0 / 0.8388` suggests the strategy sometimes sits fully out of the market (0 exposure) and never exceeds ~0.84 max exposure.\n  - If you expected to allow 1.0 (or leverage), this may indicate a binding risk constraint, scaling bug, or signal normalization issue.\n\n- **`worst_mdd: None`**\n  - Max drawdown not computed, not logged, or the equity curve is missing/invalid for some folds/runs. This often co-occurs with “degenerate folds.”\n\n- **No lane_hash / run_hash**\n  - You can’t easily trace lineage. For longer runloops, it’s worth ensuring run IDs are always emitted.\n\n## What I would do next (high leverage)\n\n1. **Diagnose why those folds are degenerate**\n   - For each fold in `[1,2,3,8]`, log:\n     - number of rows in train/val,\n     - number of trades / non-zero positions,\n     - any NaN counts post-feature-gen,\n     - whether constraints clip everything to zero,\n     - whether the optimizer converged / failed.\n\n2. **Recompute/require risk metrics (MDD)**\n   - Make MDD computation mandatory and fail the candidate if it can’t be computed (or at least mark it invalid), otherwise selection can drift toward broken runs.\n\n3. **Require a minimum “activity” threshold**\n   - E.g., minimum number of trades, minimum non-zero exposure days, minimum variance of positions, etc., per fold.\n   - This prevents “degenerate but high Sharpe on the one fold that traded” from winning.\n\n4. **Persist the champion artifact + hashes**\n   - Save the champion file path, config, seed, and hashes so the run is reproducible.\n\n## I can produce the “Next Commands (3 lines)”—but I need your CLI/API names\nYour handoff shows a placeholder “Next Commands (3 lines)” section, but you didn’t include what command interface you’re using (e.g., `aub ...`, `make ...`, python entrypoint, etc.).\n\nReply with either:\n- the command style you expect (even one example), **or**\n- paste the last ~30 lines of your runloop log showing how commands are issued,\n\nand I’ll write the exact 3 next commands to: (1) inspect degenerate folds, (2) force MDD calculation, and (3) rerun/continue with tightened validity constraints.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 34.26,
+      "text": "# AUB HANDOFF (auto)  2026-01-03T11:16:54Z\n\n## Current Champion\n- file: \n- oos_mean: 3.324908816270573  oos_min: -0.02572415474755721\n- worst_mdd: None\n- exposure_min/max: 0.0 / 0.8388333793503334\n- degenerate_folds: [1, 2, 3, 8]\n- lane_hash: None  run_hash: None\n\n## Next Commands (3 lines)\n! run_search --iters=100 --filter_degenerate=True --target=oos_min\n! evolve_population --generations=15 --objective=stability --mutation_rate=0.1\n! prune_registry --min_oos=0.0 --max_exposure=1.0\n\n---\n\n## Runloop Status\n\n- **Started**: 2026-01-03 07:48:32\n- **Elapsed**: 3:29:09.246109\n- **Remaining**: 1 day, 20:30:50.753890\n- **Loop Count**: 37\n- **Last Update**: 2026-01-03 11:17:42",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 10.352,
+      "text": "This looks like a status snapshot from an automated optimization runloop (possibly AUB for something like \"AutoML/UB\" or a trading evolver?), tracking a \"champion\" model/strategy with out-of-sample (OOS) performance metrics.\n\n### Quick Analysis of Current Champion:\n- **Strengths**: Solid OOS mean (3.32) suggests good generalization. Exposure range (0–0.84) implies controlled risk without full idling.\n- **Concerns**: \n  - OOS min near zero (-0.026) hints at occasional underperformance.\n  - Degenerate folds [1,2,3,8] likely indicate overfitting or instability in those validation folds—worth pruning or weighting down.\n  - No worst MDD reported (None), so drawdown tracking might be incomplete.\n- **Hashes**: Missing (None), so no easy reproducibility yet.\n\n### Runloop Health:\n- Healthy progress: 37 loops in ~3.5 hours, plenty of time left (1d 20h).\n- Suggestion: If this is evolutionary/search-based (e.g., HOFAMM-style), consider injecting diversity via mutation on degenerate folds or tightening exposure bounds.\n\n**Next Commands** (filling the blank—assuming bash-like for a runloop CLI; adjust as needed):\n\n```\nmutate --folds 1,2,3,8 --rate 0.15 --exposure_max 0.75\nevaluate --oos_weight 1.2 --mdd_target -0.05\narchive_champion --oos_mean 3.32\n```\n\nWhat system is this from? Need help debugging, tuning params, or generating more commands? Share the full config/logs for deeper dives!",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

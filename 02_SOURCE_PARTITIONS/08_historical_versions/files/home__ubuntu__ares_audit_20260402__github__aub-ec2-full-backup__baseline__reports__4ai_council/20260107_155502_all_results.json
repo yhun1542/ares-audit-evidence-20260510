@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260107_155502",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 13.819,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 30.804,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 11.728,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "6d900bc04079"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 13.819,
+      "text": "# AUB Handoff Acknowledged\n\n## Status Assessment\n| Metric | Value | Status |\n|--------|-------|--------|\n| OOS Mean | 1.882 | ✅ Strong |\n| OOS Min | 0.431 | ✅ Positive |\n| Degenerate Folds | 0 | ✅ Clean |\n| Exposure Range | 47-84% | ✅ Acceptable |\n| Loops | 76 | 🔄 Running |\n\n## Next Commands\n```\nCONTINUE\nCHECKPOINT_CHAMPION\nLOG_METRICS\n```\n\n## Notes\n- Champion file field appears empty — verify serialization\n- ~40 hours runway remaining; steady pace at ~9.4 loops/hr\n- No intervention needed; system healthy\n\n🟢 **HANDOFF CLEAN** — runloop continues autonomously",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 30.804,
+      "text": "Here’s what I infer from the handoff snapshot, and what I’d do next to keep the run productive.\n\n## What the snapshot says\n- **Current champion** exists (lane_hash `21b5700b…`, run_hash `db08d79b…`) but **`file:` is blank**, so the artifact path for the champion model/weights/config may not be recorded in this handoff.\n- **OOS performance**\n  - `oos_mean = 1.8815`\n  - `oos_min = 0.4315` (this is the stability “floor”; if you care about robustness, this matters a lot)\n- **Drawdown**\n  - `worst_mdd: None` → either not computed, not logged, or the metric pipeline didn’t emit it.\n- **Exposure**\n  - min/max exposure: `0.4746 / 0.8442` (so the strategy is always meaningfully exposed; not near-flat)\n- **CV integrity**\n  - `degenerate_folds: []` (good sign—no broken folds)\n\n## Immediate concerns / fixes\n1. **Champion artifact not referenced (`file:` empty)**\n   - Risk: you can’t reproduce the champion later, or you’ll accidentally overwrite/lose it.\n   - Fix: ensure the training loop writes out and logs the champion path (model file + config + feature set + seed).\n\n2. **`worst_mdd: None`**\n   - Risk: you may be selecting a “best” model without drawdown constraints actually being enforced/visible.\n   - Fix: confirm the evaluation step computes MDD on the correct equity curve (OOS only, and ideally per fold + aggregated).\n\n## What I would do next (in order)\n1. **Make the champion reproducible**\n   - Log/export:\n     - artifact path(s)\n     - exact config/hparams\n     - dataset version / time range\n     - feature pipeline hash\n     - random seeds\n     - lane_hash/run_hash mapping\n\n2. **Compute and log drawdowns**\n   - Add/verify:\n     - `mdd_oos_per_fold`\n     - `worst_mdd_oos` (min across folds)\n     - optionally `mdd_is` to detect overfit patterns\n\n3. **Stability checks on OOS**\n   - Since `oos_min` is much smaller than `oos_mean`, inspect:\n     - which fold/time period produced the low value\n     - whether it coincides with regime change or data issues\n   - Add metrics like median, 25th percentile, and fold-wise plot/table.\n\n4. **Exposure sanity**\n   - Exposure range 0.47–0.84 is high; decide whether this is intended.\n   - If you have leverage/turnover constraints, log:\n     - turnover\n     - cost-adjusted returns\n     - exposure distribution (not just min/max)\n\n## Suggested “next commands”\nBecause your “Next Commands” section is empty, here are three concrete lines that are typically the most useful next:\n\n1) **Export champion artifact + metadata**\n- “save_champion --lane 21b5700bf9943671 --run db08d79b484756ab --out artifacts/champion/”\n\n2) **Re-evaluate champion with full risk metrics**\n- “eval --artifact artifacts/champion/ --metrics oos_mean,oos_min,worst_mdd,turnover,costs --by-fold”\n\n3) **Launch targeted search to improve the weak fold**\n- “search --warm-start artifacts/champion/ --objective maximize(oos_min) subject_to(worst_mdd < X) --budget …”\n\n(Replace syntax with whatever your runloop CLI/API expects.)\n\n## One clarification I need\nWhat does **`oos_mean` / `oos_min`** represent in your system (Sharpe? CAGR? a custom score)? And do you have a target/constraint for **MDD** and **exposure**? If you tell me that, I can propose the best selection rule and next search objective.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 11.728,
+      "text": "Status acknowledged. Current champion shows strong OOS performance (mean 1.88, min 0.43, no MDD reported, balanced exposure). Degenerate folds empty—clean run.\n\n**Suggested Next Commands (3 lines):**\n```\nmutate_champion --rate 0.05 --focus exposure_balance --output candidate_77\nparallel_backtest candidates/* --oos_split=0.2 --max_folds=10\npromote_if_better candidate_77 --threshold_oos_mean=1.85 --update_champion\n```\n\nRunloop looks healthy at loop 76/remaining ~39h. Monitor for exposure drift. Ping if manual intervention needed.",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

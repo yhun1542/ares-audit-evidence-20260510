@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_025929",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.658,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 38.738,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 10.945,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "6f4343f426f5"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.658,
+      "text": "## Next Commands (3 lines)\n\n```\npython -m ost.diagnose --lane ost_v62_unified --report degeneracy --folds all\npython -m ost.train --lane ost_v62_unified --config v62_baseline_fix.yaml --min-exposure 0.02 --seed 42\npython -m ost.evaluate --lane ost_v62_unified --run latest --verbose\n```\n\n---\n\n**Assessment**: Complete degeneracy across all 19 folds with zero exposure indicates a fundamental issue—likely feature coverage gaps, target alignment problems, or over-regularization causing the model to abstain entirely. The diagnostic run should reveal whether this is data availability (missing features in certain periods) or model configuration (thresholds/constraints too tight). The training command adds a minimum exposure floor to force the model to take positions, which will at least produce measurable signal even if initially weak.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 38.738,
+      "text": "Your current “champion” looks degenerate: **exposure_min/max = 0 / 0** and **degenerate_folds = [1..19]** strongly suggests the strategy is producing **no positions in every fold** (often due to a hard constraint, a threshold that never triggers, a bug in signal wiring, or a post-processing/risk gate zeroing everything). In that state, any OOS metric can become misleading (you’re effectively measuring a “do nothing” policy).\n\n### What to check next (fast triage)\n1. **Verify signals are non-zero before gating**\n   - Inspect raw alpha / logits / scores distribution per fold.\n2. **Verify portfolio construction isn’t zeroing**\n   - Gross/net limits, min trade size, volatility targeting, turnover cap, “no-trade” flags, missing prices, NaN handling.\n3. **Confirm objective/metric isn’t rewarding zero exposure**\n   - If there’s a penalty for exposure/turnover or a bad normalization, the optimizer may converge to “flat”.\n\n### Next Commands (3 lines)\n(Adjust to your actual CLI names—these are the three I’d run in order.)\n\n1) `aub eval --lane ost_v62_unified --run unified_baseline --dump-exposure --dump-signal-stats`  \n2) `aub debug folds --lane ost_v62_unified --run unified_baseline --show-degenerate --dump-reason-codes`  \n3) `aub train --lane ost_v62_unified --from unified_baseline --set risk.min_gross=0 --set trade.min_notional=0 --set signal.threshold=0 --tag un-degenerate-sanity`\n\nIf you paste your actual available command list/help output (or the standard “AUB” CLI verbs), I can rewrite those into exact, runnable commands for your environment.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 10.945,
+      "text": "enqueue ost_v63_unified lane1 folds=1-19 hp=lr=0.001 bs=64 layers=4\nenqueue ost_v63_unified lane2 folds=1-19 hp=lr=0.0005 bs=128 layers=5\ncandidate_select top_5 oos_mean",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

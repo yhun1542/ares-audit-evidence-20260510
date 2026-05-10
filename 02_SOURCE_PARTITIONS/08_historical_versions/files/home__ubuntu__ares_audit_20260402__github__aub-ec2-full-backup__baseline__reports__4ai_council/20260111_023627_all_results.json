@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_023627",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 18.96,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 33.49,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 7.902,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "3f6aae565c30"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 18.96,
+      "text": "# Handoff Analysis\n\n## Summary\nSystem running normally after 399 loops (~42 hours). Champion remains unchallenged.\n\n## Performance Comparison\n\n| Metric | Champion | Last Candidate | Delta |\n|--------|----------|----------------|-------|\n| tuning_mean | **3.53** | 1.76 | -50% |\n| tuning_min | **1.58** | 0.05 | -97% |\n| lockbox_mean | **4.06** | 1.79 | -56% |\n| lockbox_min | **3.32** | 1.35 | -59% |\n\n## Key Observations\n\n1. **Champion holds strong** — `v5_latest` outperforms by 2x+ across all metrics\n\n2. **Candidate weakness** — The `exp_macro_alpha_shadow` passed validation but:\n   - tuning_min of 0.05 = near-zero worst-fold performance\n   - Significantly worse generalization (lockbox gap)\n\n3. **Drawdown within bounds** — Candidate's -11.2% worst MDD is acceptable but irrelevant given poor returns\n\n4. **System health** — 5h13m remaining, no stuck INCONCLUSIVE states\n\n## Recommendation\n\n```\n✓ Continue autopilot — no intervention needed\n✓ Champion stable\n✓ Queue clear\n```\n\nThe next 3 commands will:\n1. Search for improved module combinations\n2. Test system-level config changes  \n3. Generate diagnostic report\n\n**No action required** unless lockbox degradation appears in subsequent loops.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 33.49,
+      "text": "Here’s what your handoff implies, plus the two things I’d verify before you let `--select-best` potentially change the champion.\n\n## 1) Metric direction is the key ambiguity\nYou have:\n\n- **Champion**: tuning_mean **3.53**, lockbox_mean **4.06**\n- **Last PASS candidate**: tuning_mean **1.76**, lockbox_mean **1.79**\n\nIf these “means” are **loss/error** (lower is better), then the candidate is dramatically better on both tuning + lockbox.\n\nIf these “means” are **return/score** (higher is better), then the champion is better and the candidate is a big regression (despite being labeled PASS).\n\nBefore doing anything else: confirm whether the objective is **minimize** or **maximize** for `tuning_mean` and `lockbox_mean` in your reporting code.\n\n## 2) Champion is missing MDD fields (possible reporting gap)\nChampion has:\n- `fold14_mdd: None`\n- `worst_mdd: None`\n\nCandidate has:\n- `fold14_mdd: -0.0997`\n- `worst_mdd: -0.1118`\n\nThat suggests either:\n- the champion predates MDD computation, or\n- the champion run didn’t emit MDD (bug / config mismatch), or\n- MDD is only computed for certain experiment types.\n\nIf MDD is part of your gate/promote logic, you should compute/refresh MDD for the champion (or re-run evaluation) so comparisons are apples-to-apples.\n\n## 3) What I would do next (practical)\nGiven your “Next Commands”, I’d run them in exactly that order, *but* I’d first ensure the selector knows the metric direction and whether it requires MDD.\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n### Quick safety checks before `--select-best`\n- Look inside the scoring/selection logic (or the produced leaderboard) to confirm it’s sorting the way you intend (ascending vs descending).\n- Confirm whether missing `worst_mdd` disqualifies a run, is ignored, or is treated as best/worst (some code mistakenly treats `None` as 0).\n\n## 4) One question so I can be precise\nFor `tuning_mean` / `lockbox_mean`: **is lower better or higher better** in your framework? And are these “means” returns, errors, or some composite score?",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 7.902,
+      "text": "### Status Summary\n- **Champion**: `baseline/champion_v5_latest.json` (strong performance: tuning 3.53/1.58, lockbox 4.06/3.32).\n- **Last PASS**: `baseline/candidate_20260102_155322_exp_macro_alpha_shadow.json` (weaker: tuning 1.76/0.05, lockbox 1.79/1.35; MDD fold14 -0.10, worst -0.11).\n- **Inconclusive**: None.\n- **Runloop**: Loop 399/∞ | Elapsed: ~1d 19h | Remaining: ~5h 14m | Last: 2026-01-11 02:35:48.\n\n### Next Actions\nExecute the provided commands in sequence:\n1. `python3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best`\n2. `python3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run`\n3. `python3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md`\n\n**Recommendation**: Champion holds; monitor new candidates from `--select-best` for potential promotion. Negative MDD on PASS candidate suggests risk—prioritize stability in next fixes. Handoff complete. 🚀",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

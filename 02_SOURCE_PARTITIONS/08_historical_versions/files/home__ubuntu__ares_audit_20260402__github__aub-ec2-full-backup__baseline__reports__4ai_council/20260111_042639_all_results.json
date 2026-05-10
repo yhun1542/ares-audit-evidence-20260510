@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_042639",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 16.275,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 26.396,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 16.858,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "124a7c262143"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 16.275,
+      "text": "# AUB Status Acknowledged\n\n## Assessment\n\n| Metric | Value | Status |\n|--------|-------|--------|\n| Champion | None | ⚠️ Empty |\n| Degenerate Folds | 19/19 | 🔴 All flat |\n| Exposure | 0.0 / 0.0 | 🔴 No positions |\n| Time Remaining | ~3.4 hrs | ⏳ |\n\n## Diagnosis\n\nThe `unified_baseline` run is fully degenerate — no positions taken across any fold. This typically indicates:\n\n1. **Signal threshold too restrictive** — nothing passes filters\n2. **Data alignment issue** — features not reaching the model\n3. **Intentional null baseline** — establishing zero-exposure reference\n\n## Recommended Next Steps\n\nSince only ~3.5 hours remain:\n\n```\n# Let it complete, then inspect logs:\ntail -100 logs/ost_v62_unified/unified_baseline.log\n\n# Check if signals are being generated at all:\ngrep -i \"signal\\|position\\|entry\" logs/ost_v62_unified/*.log | head -50\n```\n\n## On Completion\n\nIf this was intended as a null baseline for comparison, proceed to active optimization lanes. If unexpected, audit:\n- Feature pipeline connectivity\n- Entry/exit threshold params\n- Universe filter criteria\n\nWant me to prepare the next lane config for when this completes?",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 26.396,
+      "text": "Your “current champion” is effectively a non-trading / invalid model run:\n\n- **exposure_min/max: 0.0 / 0.0** → the strategy never takes risk (no positions), so performance metrics can be misleading or come from edge-case handling.\n- **degenerate_folds: [1..19]** → *every* CV fold is degenerate (typically: no trades in the fold, constant predictions, or all samples filtered out). This usually invalidates OOS stats.\n- **worst_mdd: None** → consistent with “no equity curve movement” (no trades) or metrics not computed due to degeneracy.\n- **file:** blank → the artifact/path for the champion wasn’t recorded/saved (or logging failed).\n\n### Most likely causes\n1. **Signal never triggers** (threshold too strict, all features NaN/0 after preprocessing, or model outputs constant).\n2. **Trading constraints block everything** (position sizing returns 0, risk limits clamp to 0, min notional too high, slippage/fees assumptions causing rejection).\n3. **Data filtering wipes folds** (date filters, liquidity filters, missingness filters, label horizon mismatch).\n4. **Bug in execution layer** (orders not sent, fill simulator always rejects, exposure calculation broken).\n\n### What to do next (quick triage checklist)\n1. **Verify trades exist**\n   - Count trades per fold and overall.\n   - Count non-zero target positions / orders generated.\n2. **Check model outputs**\n   - Distribution of predictions per fold (min/mean/max/std).\n   - If classification: class probabilities; if regression: variance.\n3. **Check gating**\n   - How many samples survive each filter (per fold).\n   - How many signals pass thresholds.\n   - How many orders rejected (and why).\n4. **Fix artifact saving**\n   - Ensure champion “file/path” is written even when metrics are degenerate, or explicitly mark run invalid.\n\n### One decision to make\nDo you want the runloop to **treat zero-exposure / degenerate-fold results as invalid** (so they can’t become “champion”), or do you want to **allow them but label them separately**?\n\nIf you paste the 3 “Next Commands” lines (they’re blank in the handoff), or tell me what framework this runloop is using (module/script names), I can propose the exact commands to:\n- print per-fold trade counts,\n- print prediction stats,\n- and force “invalid if exposure==0 or degenerate_folds non-empty”.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 16.858,
+      "text": "**Status Summary**:\n- Current champion has poor performance: OOS mean ~3.61, but zero exposure (no bets placed) and degenerate across all 19 folds.\n- Runloop at loop 416/unknown total, ~3.25 hours remaining.\n\n**Recommendations for Next Commands** (3 lines proposed):\n```\nenqueue_candidates --count=50 --min_prob=0.4 --max_prob=0.6 --model=unified_v62\nevaluate_batch --lane=ost_v62_unified --folds=1-19 --run_hash=unified_baseline_aggressive\npromote_champion --threshold_oos=2.5 --min_exposure=0.1\n```",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

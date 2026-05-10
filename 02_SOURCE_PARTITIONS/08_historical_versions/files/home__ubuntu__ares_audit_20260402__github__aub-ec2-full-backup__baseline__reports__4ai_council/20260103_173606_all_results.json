@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_173606",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 14.896,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 36.382,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 42.306,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 13.079,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "414dfcbad918"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 14.896,
+      "text": "# AUB HANDOFF Response\n\n## Assessment\n- **REJECT**: 4 degenerate folds [1, 2, 3, 8] exceeds threshold (typically ≤2 acceptable)\n- Missing champion file path\n- No MDD calculation available\n\n## Next Commands\n```\nREJECT_CHAMPION reason=\"degenerate_folds_exceed_threshold\"\nDIAGNOSE_FOLDS folds=[1,2,3,8] verbose=true\nREQUEUE_LANE with_constraints=\"min_exposure=0.05,max_degenerate=2\"\n```\n\n## Notes\nThe 40% degenerate fold rate suggests possible:\n1. Insufficient signal in early time periods (folds 1-3)\n2. Regime sensitivity \n3. Overfitting to specific market conditions\n\nRecommend investigating fold 8 separately as it's non-contiguous with 1-3.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 36.382,
+      "text": "You’ve got a “champion” snapshot, but the handoff is missing the actual CLI/context that would let me write *literal* next commands. What I can do right now is:\n\n1) Interpret what this handoff is telling you (and what looks problematic).  \n2) Propose the *next 3 actions* you likely want, and give them as **command templates** you can map onto your repo’s CLI once you tell me the actual command names.\n\n## What the handoff implies\n- **oos_mean = 3.3249**: strong average out‑of‑sample score (assuming “higher is better”).\n- **oos_min = -0.0257**: at least one fold/period is slightly negative. Not catastrophic, but it’s a tail risk sign.\n- **degenerate_folds = [1, 2, 3, 8]**: this is the biggest red flag. A lot of folds are “degenerate” (often meaning: no trades, singular fit, exposure collapses to 0, numerical issues, or metric undefined/unstable).\n- **exposure_min/max = 0.0 / 0.8388**: minimum exposure hits **0**, consistent with degenerate folds (model sometimes fully exits / produces no signal). Max never reaches 1.0, so it’s not fully allocating even in best cases.\n- **worst_mdd = None**: either MDD wasn’t computed, data missing, or the run didn’t generate an equity curve in some folds.\n\n## The next 3 things to do (as “next commands”)\nBelow are three *high-value* next steps. Replace `aub` / flags with whatever your project actually uses.\n\n1) **Reproduce the champion run with full logging/artifacts**\n```bash\naub run --champion --save-artifacts --log-level debug\n```\n\n2) **Diagnose degenerate folds (why folds 1,2,3,8 collapse)**\n```bash\naub diagnose --run champion --focus-folds 1,2,3,8 --dump-fold-metrics --dump-signals\n```\n\n3) **Launch a constrained sweep to reduce degeneracy (exposure floor / stronger regularization / min-trades constraint)**\n```bash\naub sweep --from champion --constraints \"min_exposure>0.05,min_trades>0\" --tune \"reg,threshold,position_sizing\" --cv-repeats 3\n```\n\n## Two quick questions so I can output the *exact* 3 lines you want\n1) What is the actual tool/entrypoint? (e.g., `make ...`, `python -m ...`, `cli.py ...`, `dvc repro`, etc.)  \n2) What does “degenerate_folds” mean in your system (no trades, NaNs, singular matrix, missing data, exposure=0, etc.)?\n\nIf you paste:\n- the help output of your CLI (`--help`), **or**\n- an example of a previous “Next Commands (3 lines)” block from earlier handoffs,\n\n…I’ll rewrite the three commands in the exact syntax your pipeline expects.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 42.306,
+      "text": "python run.py --seed 4242 --l2 1e-4 --learning_rate 0.01\npython run.py --seed 4243 --l2 1e-3 --max_depth 3\npython run.py --seed 4244 --l2 5e-4 --subsample 0.8",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 13.079,
+      "text": "fold 4 mutate champ\nfold 5 mutate champ --rate=0.05\nfold 6 crossover champ champ",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

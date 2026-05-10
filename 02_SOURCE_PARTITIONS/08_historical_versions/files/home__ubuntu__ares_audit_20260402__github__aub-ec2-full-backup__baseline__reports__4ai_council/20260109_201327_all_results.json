@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260109_201327",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 13.336,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 29.503,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 12.024,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "5aa1eb8e0b42"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 13.336,
+      "text": "# AUB Status Acknowledged\n\n## Assessment\n| Metric | Value | Status |\n|--------|-------|--------|\n| OOS Mean | 1.882 | ✅ Strong |\n| OOS Min | 0.431 | ⚠️ Some weak folds |\n| Exposure | 47-84% | ✅ Healthy range |\n| Degenerate | 0 | ✅ Clean |\n| Loops | 116 | Running normally |\n\n## Next Commands\n```\nCONTINUE\n```\n\n---\n\nRun appears healthy. Champion showing solid OOS mean with no degenerate folds. The 0.43 min fold bears watching but isn't critical given the strong mean. ~35 hours remaining - no intervention needed.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 29.503,
+      "text": "Here’s what this handoff says, plus the immediate things I’d check/decide next.\n\n## What the status indicates\n\n### Current best (“Champion”)\n- **oos_mean**: **1.8815**\n- **oos_min**: **0.4315**\n- **worst_mdd**: **None** (either not computed, not reported, or metric disabled)\n- **exposure_min/max**: **0.4746 / 0.8442**\n- **degenerate_folds**: **[]** (good: no folds collapsed / produced invalid results)\n- **lane_hash**: `21b5700bf9943671`\n- **run_hash**: `db08d79b484756ab`\n- **file**: **(blank)** (this is notable—usually you’d want an artifact path or config pointer here)\n\nInterpretation (assuming higher is better for `oos_*`):\n- The model is performing strongly on average out-of-sample (**1.88**), but the **worst fold/window is much lower (0.43)**, suggesting performance instability across time/folds/regimes.\n- Exposure is **not extreme** (roughly 47%–84%), but it’s also not close to fully dynamic/flat—depends on what you expect.\n\n### Runloop\n- Running for **~12h 23m**, **116 loops** completed.\n- **~1 day 11h** remaining.\n- Last update is current.\n\n## Red flags / missing pieces\n1. **`file:` is empty**\n   - If your system normally logs the champion artifact (model file, config JSON, weights, etc.), you likely can’t reproduce/restore the champion cleanly from this handoff alone.\n2. **`worst_mdd: None`**\n   - If MDD is a required constraint/selection metric, you may be selecting champions without drawdown screening.\n\n## What I’d do next (actionable)\n1. **Locate and persist the champion artifact**\n   - Find which output directory corresponds to `run_hash=db08d79b484756ab` and confirm the “champion” model/config is saved and referenced.\n   - If your framework supports it: force a “save champion” step and record the path in the handoff.\n\n2. **Confirm metric definitions**\n   - What exactly are `oos_mean` and `oos_min`? (Sharpe? Calmar? custom utility?)\n   - Is **higher better** and is **0.43** acceptable as a minimum?\n\n3. **Add/restore MDD computation if it’s supposed to exist**\n   - If MDD is part of risk control, compute it for the current champion and ensure future candidates report it.\n   - If it’s intentionally omitted, remove it from the handoff to avoid ambiguity.\n\n4. **Stability improvement if `oos_min` matters**\n   - If selection should prioritize robustness, consider champion selection based on:\n     - maximizing `oos_min`, or\n     - maximizing `oos_mean` subject to `oos_min >= threshold`, or\n     - a blended score (e.g., mean – λ*(mean-min), etc.)\n\n## Clarifying question\nYour handoff shows **“Next Commands (3 lines)”** but it’s blank. What were the three next commands you intended (or do you want me to propose three concrete commands to: (1) print champion details, (2) export/save artifact, (3) compute/report MDD + fold breakdown)?",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 12.024,
+      "text": "Handoff received at 2026-01-09T20:12:37Z.\n\n**Summary**:\n- Champion OOS: mean=1.88 (strong), min=0.43 (decent stability).\n- Exposure range solid (47-84%), no MDD issues, clean folds.\n- Progress: Loop 116/??? (~12h elapsed, ~35h remaining). On track.\n\nNext Commands (3 lines):\n```\nenqueue_lane --hash 21b5700bf9943671 --target oos_mean>1.9 --expos 0.5-0.8\nprune_degenerates --threshold 0.3 --run db08d79b484756ab\nstatus_update --loop 117\n```\n\nAwaiting confirmation or overrides.",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

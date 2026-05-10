@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_055415",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 15.524,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 44.443,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 15.637,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "62de822d925a"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 15.524,
+      "text": "## Analysis\n\nCritical failure state: **ALL 19 folds degenerate** with zero exposure. The model is producing no valid signals - likely outputting constants, NaNs, or zeros across all predictions.\n\n## Next Commands (3 lines)\n\n```\npython -m ost.diagnose degeneracy --lane ost_v62_unified --run unified_baseline --verbose\npython -m ost.validate_features --lane ost_v62_unified --check-nan --check-inf --check-variance\npython -m ost.train --lane ost_v62_unified --config debug_baseline --lr 1e-4 --grad-clip 1.0 --seed 42\n```",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 44.443,
+      "text": "You’ve got a “champion” that is effectively doing **nothing**:\n\n- **exposure_min/max: 0.0 / 0.0** → the portfolio is **always 100% cash** (no long/short holdings ever).\n- **degenerate_folds: [1..19]** → *every* CV fold is being marked degenerate (commonly because there are no trades/positions, metrics can’t be computed, or the evaluator hit NaNs/empty series).\n- **worst_mdd: None** is consistent with “no equity curve movement” (no positions → no drawdown).\n- The reported **oos_mean/oos_min** are therefore likely coming from a fallback/scoring artifact rather than a meaningful trading result.\n\n### Most likely root causes to check\n1. **Signal is all zeros / NaNs** after feature generation, clipping, or filtering.\n2. **Position sizing / risk constraints** are forcing weights to zero (e.g., max leverage = 0, exposure cap = 0, turnover cap = 0, min-liquidity filter removes all assets, etc.).\n3. **Post-processing bug**: alignment/index mismatch between signal and returns leads to empty intersection → no trades.\n4. **Universe becomes empty** in each fold due to data availability rules.\n\n---\n\n## Next Commands (3 lines)\nI don’t know your exact CLI, so here are the *three* commands I’d run in any AUB-style setup; adapt the verb/names to your tooling:\n\n1) **Dump the resolved run config / constraints**\n```bash\naub show-config --lane ost_v62_unified --run unified_baseline\n```\n\n2) **Run a single fold with max verbosity + artifact dumps (signals/weights)**\n```bash\naub run --lane ost_v62_unified --run unified_baseline --fold 1 --verbose --dump-signals --dump-weights\n```\n\n3) **Summarize exposure/trades to confirm where it goes to zero**\n```bash\naub analyze --lane ost_v62_unified --run unified_baseline --fold 1 --report exposure,trades,missingness\n```\n\nIf you paste your project’s actual command pattern (or `--help` output for the runner), I can rewrite those into the exact 3 commands your environment expects.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 15.637,
+      "text": "python src/generate_candidates.py --lane ost_v62_unified --num 100 --seed 42\npython src/tournament.py --lane ost_v62_unified --top_k 20 --folds 1-19\npython src/promote_champion.py --lane ost_v62_unified --threshold 2.0",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

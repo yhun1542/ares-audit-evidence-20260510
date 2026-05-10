@@ -1,0 +1,53 @@
+# ============================================================================
+# B01 Multi-Source Data Fallback — 설정 템플릿 (v1.0.0)
+#
+# 중요: 본 모듈은 보조 소스의 데이터를 **읽기만** 한다. 보조 소스 ingest
+# 데몬이 선행되어 market:<secondary>:price:* 키를 채워야 함.
+# ============================================================================
+
+redis:
+  url: ""
+  host: "127.0.0.1"
+  port: 6379
+  db: 0
+  use_tls: false
+  password_env: "ARES_REDIS_PASSWORD"
+
+# 주 소스 (기존 Polygon 경로 가정). 실제 EC2 Redis 스키마로 교체 필요.
+primary:
+  name: "polygon"
+  key_pattern: "market:polygon:price:{symbol}"
+  kind: "hash"                    # "hash" | "json" | "scalar_string"
+  price_field: "last_trade_price"
+  ts_field: "last_update_ts"
+  ts_unit: "ms"
+  stale_sec: 5                    # 5초 이상 업데이트 없으면 stale
+
+# 보조 소스 (별도 ingest 필요). 미배포 상태에선 항상 stale → 주 단일 소스 운영.
+secondary:
+  name: "alpha_vantage"
+  key_pattern: "market:alpha_vantage:price:{symbol}"
+  kind: "hash"
+  price_field: "last_trade_price"
+  ts_field: "last_update_ts"
+  ts_unit: "ms"
+  stale_sec: 60                   # AV 는 분 단위 업데이트 허용
+
+# 유니버스 키 (userMemory: LIVE_UNI_60)
+universe_set_key: "LIVE_UNI_60"
+
+# 두 소스 가격 편차 임계 (0.5% 기본)
+divergence_threshold: 0.005
+
+# 편차 발생 시 보수적으로 주 소스 유지 (기본 true 유지 권장)
+prefer_primary_on_divergence: true
+
+poll_interval_sec: 2
+heartbeat_interval_sec: 30
+unified_ttl_sec: 60
+status_ttl_sec: 120
+
+log_level: "INFO"
+
+# 필수 유지: true. F22 는 본 결과를 자동 참조하지 않음 (별도 B01-C 단계 필요).
+observe_only: true

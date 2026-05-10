@@ -1,0 +1,34 @@
+# ARES Drift Detector Layering (2026-05-06)
+
+ARES는 두 종류의 drift 검출기를 운영한다. 둘은 **검사 차원이 다르므로 공존**한다.
+
+## 1. Deployment-Drift Detector
+- **무엇을 검사**: `pm2_baseline.json` ⟷ live `pm2 jlist` 일치 (배포 SSOT)
+- **알람 prefix**: `[ARES DEPLOYMENT-DRIFT]`
+- **분류**: P0 / P1 / P2 / P3 (P0 = critical 가드 PROCESS_REMOVED·NOT_ONLINE·EXEC_PATH_CHANGED·FORBIDDEN_PATH)
+- **호출 주기**: 30분 (`ares-deployment-drift-check.timer`)
+- **스크립트**: `/home/ubuntu/ares_current/scripts/ares_deployment_drift_check.py`
+- **로그**: `/var/log/ares/drift/last_report.json`, `last_alert_fingerprint.txt`
+
+## 2. Healthcheck-Drift Detector
+- **무엇을 검사**: `healthcheck.config.json` ⟷ live PM2 contract orphan
+  - PM2에는 있지만 healthcheck에 미정의 (PM2_ONLY_PROCESS)
+  - healthcheck에는 있지만 PM2에 미정의 (HEALTHCHECK_ONLY_PROCESS)
+- **알람 prefix**: `[ARES HEALTHCHECK-DRIFT]`
+- **분류**: 단일 라인 issue 리스트
+- **호출 주기**: 1시간 (`ares-drift-detector.timer`)
+- **스크립트**: `/home/ubuntu/ops/ares_drift_detector.py`
+
+## 분리 이유
+두 검출기가 같은 alarm 채널(텔레그램)을 쓰지만 검사 차원이 다르므로 **통합하면 의미 손실**.
+prefix를 분리하여 운영자가 어떤 종류의 drift인지 즉시 식별 가능.
+
+## 의도된 중복 처리
+* "PM2에 추가됐는데 baseline / healthcheck 양쪽에 미정의" 인 경우, 두 detector 모두 알람 발사.
+  → 의도된 동작. 양쪽에 동시에 등록해야 한다는 신호.
+
+## SSOT 일원화
+* `services.registry.yaml` = 어떤 서비스가 critical인지에 대한 SSOT
+* `pm2_baseline.json` = 어떤 PM2 process가 deployment-baseline 인가
+* `healthcheck.config.json` = 어떤 PM2 process가 외부 헬스체크 대상인가
+* 위 3개를 매시 자동 동기화: `ares-critical-sync` (registry → baseline)

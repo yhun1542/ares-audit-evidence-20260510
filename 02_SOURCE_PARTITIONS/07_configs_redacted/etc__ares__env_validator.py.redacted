@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""
+env_validator.py — ARES 환경변수 무결성 검증 (v2.0)
+
+검증 항목:
+1. /etc/ares/redis.env 존재 및 REDIS_URL 포함
+2. /etc/ares/python.env 존재 및 PYTHONPATH 포함
+3. ecosystem.config.cjs 존재 및 symlink 유효
+4. PYTHONPATH에 ares-nextgen 포함
+5. REDIS_URL이 amazonaws.com 포함 (ElastiCache)
+6. PM2 dump 무결성 검사
+
+사용: python3 /etc/ares/env_validator.py [--fix]
+"""
+
+import os
+import sys
+import json
+
+CHECKS = []
+FIXES = []
+
+def check(name, condition, fix_msg=None):
+    if condition:
+        CHECKS.append(("PASS", name))
+    else:
+        CHECKS.append(("FAIL", name))
+        if fix_msg:
+            FIXES.append(fix_msg)
+
+def load_env_file(path):
+    env = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return env
+
+def main():
+    fix_mode = "--fix" in sys.argv
+    
+    # 1. Redis env
+    redis_env = load_env_file("/etc/ares/redis.env")
+    check("redis.env exists", os.path.exists("/etc/ares/redis.env"),
+          "Create /etc/ares/redis.env with REDIS_URL")
+    check("REDIS_URL in redis.env", "REDIS_URL" in redis_env,
+          "Add REDIS_URL to /etc/ares/redis.env")
+    check("REDIS_URL points to ElastiCache", 
+          "amazonaws.com" in redis_env.get("REDIS_URL", ""),
+          "REDIS_URL should point to ElastiCache (*.amazonaws.com)")
+    
+    # 2. Python env
+    python_env = load_env_file("/etc/ares/python.env")
+    check("python.env exists", os.path.exists("/etc/ares/python.env"),
+          "Run setup_env_management.sh to create /etc/ares/python.env")
+    check("PYTHONPATH in python.env", "PYTHONPATH" in python_env,
+          "Add PYTHONPATH to /etc/ares/python.env")
+    check("PYTHONPATH includes ares-nextgen",
+          "ares-nextgen" in python_env.get("PYTHONPATH", ""),
+          "Add /home/ubuntu/ares-nextgen to PYTHONPATH in /etc/ares/python.env")
+    
+    # 3. Ecosystem config
+    eco_config = "/home/ubuntu/ecosystem.config.cjs"
+    eco_master = "/home/ubuntu/ecosystem.master.cjs"
+    check("ecosystem.config.cjs exists", os.path.exists(eco_config),
+          f"ln -sf {eco_master} {eco_config}")
+    if os.path.islink(eco_config):
+        target = os.readlink(eco_config)
+        check("ecosystem.config.cjs symlink valid",
+              os.path.exists(eco_config),
+              f"Symlink target {target} does not exist")
+    
+    # 4. PM2 dump
+    dump_path = "/home/ubuntu/.pm2/dump.pm2"
+    if os.path.exists(dump_path):
+        try:
+            with open(dump_path) as f:
+                dump = json.load(f)
+            check("dump.pm2 valid JSON", True)
+            check("dump.pm2 has enough processes", len(dump) >= 30,
+                  f"dump has {len(dump)} processes (expected >= 30)")
+            
+            # Poison check
+            poison_names = {"ecosystem.master", "ecosystem.nextgen2", "ecosystem.config"}
+            poison = [p["name"] for p in dump if p.get("name") in poison_names]
+            check("dump.pm2 no poison processes", len(poison) == 0,
+                  f"Poison processes in dump: {poison}")
+            
+            # nextgen2-live PYTHONPATH
+            ng2 = next((p for p in dump if p.get("name") == "nextgen2-live"), None)
+            if ng2:
+                # PM2 dump stores env vars in both p['env'] and p['pm2_env']
+                pp = ng2.get("env", {}).get("PYTHONPATH", "") or ng2.get("pm2_env", {}).get("PYTHONPATH", "")
+                check("dump nextgen2-live PYTHONPATH",
+                      "ares-nextgen" in pp,
+                      f"nextgen2-live PYTHONPATH in dump: {pp}")
+        except json.JSONDecodeError:
+            check("dump.pm2 valid JSON", False, "dump.pm2 is corrupted")
+    else:
+        check("dump.pm2 exists", False, "Run pm2 save to create dump")
+    
+    # 5. pm2_safe_startup.sh
+    check("pm2_safe_startup.sh exists",
+          os.path.exists("/home/ubuntu/pm2_safe_startup.sh"),
+          "Deploy pm2_safe_startup.sh")
+    check("pm2_safe_startup.sh executable",
+          os.access("/home/ubuntu/pm2_safe_startup.sh", os.X_OK) if os.path.exists("/home/ubuntu/pm2_safe_startup.sh") else False,
+          "chmod +x /home/ubuntu/pm2_safe_startup.sh")
+    
+    # Report
+    print("\n" + "=" * 60)
+    print("ARES Environment Validator v2.0")
+    print("=" * 60)
+    
+    pass_count = sum(1 for s, _ in CHECKS if s == "PASS")
+    fail_count = sum(1 for s, _ in CHECKS if s == "FAIL")
+    
+    for status, name in CHECKS:
+        icon = "✓" if status == "PASS" else "✗"
+        print(f"  [{icon}] {name}")
+    
+    print(f"\nResult: {pass_count} passed, {fail_count} failed")
+    
+    if FIXES:
+        print(f"\nFixes needed:")
+        for i, fix in enumerate(FIXES, 1):
+            print(f"  {i}. {fix}")
+    
+    return 0 if fail_count == 0 else 1
+
+if __name__ == "__main__":
+    sys.exit(main())

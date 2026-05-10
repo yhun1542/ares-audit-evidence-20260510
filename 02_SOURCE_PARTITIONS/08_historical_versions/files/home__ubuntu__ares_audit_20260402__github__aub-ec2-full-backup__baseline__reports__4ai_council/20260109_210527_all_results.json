@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260109_210527",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 13.73,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 34.199,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 9.529,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "176d7007f9bf"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 13.73,
+      "text": "# Handoff Analysis\n\n## Status Summary\n\n| Metric | Champion | Last PASS |\n|--------|----------|-----------|\n| Tuning Mean | **1.904** | 1.762 |\n| Tuning Min | **0.431** | 0.051 ⚠️ |\n| Lockbox Mean | 1.793 | 1.793 |\n| Lockbox Min | 1.134 | **1.347** |\n| Worst MDD | **-9.3%** | -11.2% |\n\n## Assessment\n\n**Champion holds position** - The `v5_latest` remains superior overall:\n- ✅ Much better tuning stability (min 0.43 vs 0.05)\n- ✅ Lower worst-case drawdown (-9.3% vs -11.2%)\n- ⚖️ Lockbox means essentially equal\n- The candidate's better lockbox min doesn't compensate for fragile tuning performance\n\n## Loop Health\n```\nProgress: ████████░░░░░░░░ ~36% elapsed\nIterations: 124 | Rate: ~9.4/hour\nStatus: Running stable, no inconclusive backlog\n```\n\n## Recommended Action\n\n**Continue autonomous loop** - System is operating normally with:\n- No manual intervention needed\n- Clear champion/candidate separation\n- Commands queued for next iteration\n\nReady for next operator to monitor or pick up where needed. 🔄",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 34.199,
+      "text": "Current state interpretation and what I would do next:\n\n## 1) Champion vs last PASS candidate (quick read)\n### Champion (`baseline/champion_v5_latest.json`)\n- **tuning_mean/min:** 1.9038 / 0.4315  → strong mean, decent floor\n- **lockbox_mean/min:** 1.7925 / 1.1337 → solid mean, but lower min than the candidate\n- **fold14_mdd:** -0.0931\n- **worst_mdd:** -0.0931 → very stable (tight worst drawdown)\n\n### Last PASS candidate (`baseline/candidate_20260102_155322_exp_macro_alpha_shadow.json`)\n- **tuning_mean/min:** 1.7618 / 0.0508 → weaker mean and *very* weak minimum (fragile in at least one tuning slice)\n- **lockbox_mean/min:** 1.7927 / 1.3469 → essentially same lockbox mean, *better* lockbox minimum\n- **fold14_mdd:** -0.0997\n- **worst_mdd:** -0.1118 → materially worse tail drawdown than champion\n\n**Conclusion:** keep the current champion. The candidate’s only clear win is lockbox_min, but it pays for it with worse worst-case drawdown and much worse tuning_min (robustness). Unless your selection policy heavily prioritizes lockbox_min above tail risk and tuning robustness, it shouldn’t replace the champion.\n\n## 2) “INCONCLUSIVE Now: (none)”\nNo stalled decisions. You’re clear to proceed with the runloop.\n\n## 3) Recommended next steps (matching your “Next Commands”)\nYou can proceed in this order:\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n### What to watch for in the outputs\n- From `aub_autopilot --select-best`: confirm it does **not** promote anything with worse `worst_mdd` unless it’s a large gain in lockbox_mean *and* doesn’t crater tuning_min.\n- From `system_autopilot`: ensure system-level combos don’t hide a module with very low tuning_min (like 0.05) that only “looks good” after aggregation.\n- From `aub_next_fix.py`: prioritize fixes that improve **tuning_min** and **worst_mdd** first; lockbox_min improvements are good but shouldn’t come with a fatter left tail.\n\n## 4) If you tell me your promotion rule, I can be stricter\nIf you paste the exact selection criteria (e.g., weighted score, hard constraints on MDD, etc.), I can say definitively whether that last candidate should have been labeled PASS and what threshold likely caused it.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 9.529,
+      "text": "### Experiment Status Summary (Loop 124)\n\n**Key Highlights**:\n- **Current Champion** (`champion_v5_latest.json`): Solid performance with stable tuning (mean: 1.90, min: 0.43) and lockbox (mean: 1.79, min: 1.13). MDD remains contained at -0.093 across fold14/worst—lowest drawdown seen.\n- **Last PASS Candidate** (`candidate_20260102_155322_exp_macro_alpha_shadow.json`): Competitive lockbox mean (1.79) but weaker tuning min (0.05) and higher MDD (-0.10/-0.11). Didn't overtake champion.\n- **No INCONCLUSIVE** candidates—clean slate for next iterations.\n- **Progress**: 13h+ elapsed, ~1.5 days remaining. Steady at 124 loops; champion holding strong.\n\n**Metrics Comparison Table**:\n| Metric          | Champion (v5)       | Last PASS Candidate          | Delta (Candidate vs Champ) |\n|-----------------|---------------------|------------------------------|----------------------------|\n| Tuning Mean/Min | 1.90 / **0.43**    | 1.76 / 0.05                 | ↓0.14 / ↓0.38             |\n| Lockbox Mean/Min| 1.79 / **1.13**    | 1.79 / 1.35                 | 0.00 / ↑0.22              |\n| Fold14 MDD      | **-0.093**         | -0.10                       | ↓0.007                    |\n| Worst MDD       | **-0.093**         | -0.112                      | ↓0.019                    |\n\n**Recommendations**:\n- **Strengths to Preserve**: Champion's tuning stability and MDD control suggest robust generalization. Prioritize variants amplifying lockbox min without inflating drawdown.\n- **Potential Fixes**: Last candidate's tuning min collapse (0.05) hints at overfitting or macro alpha sensitivity (`exp_macro_alpha_shadow`). Explore:\n  1. Increase regularization on shadow features.\n  2. Hybridize with v5's macro setup for better min resilience.\n  3. Test ensemble (e.g., 70% v5 + 30% shadow) in next tuning round.\n- **Next Steps**: Execute the queued commands to auto-select/promote best, iterate system candidates, and generate `next_fix.md`. Monitor for MDD creep in lockbox.\n\nRunloop looks healthy—keep it rolling! If you need a custom analysis script, parameter tweaks, or simulation of next_fix output, share more details (e.g., registry YAML or logs). 🚀",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

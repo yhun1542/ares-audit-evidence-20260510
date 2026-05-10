@@ -1,0 +1,205 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AUB Downstream Field Contract",
+  "description": "다운스트림이 읽어야 할 필드 계약(spec) - v1.1",
+  "version": "1.1",
+  "changelog": {
+    "v1.1": [
+      "(A) summary.required에 metrics_reliable 추가",
+      "(B) known_data_issues에 description 추가 및 required 강화",
+      "(C) config_fingerprint에 max_turnover 추가",
+      "(D) summary KPI는 rebalancing_log로부터 재계산 가능 규칙 명시"
+    ],
+    "v1.0": ["초기 버전"]
+  },
+  "type": "object",
+  "properties": {
+    "config_fingerprint": {
+      "type": "object",
+      "description": "재현성 기본 키 및 설정 진실(SoT)",
+      "properties": {
+        "flags_addon": {
+          "description": "애드온 on/off 판정의 단일 진실(SoT). scenario.flags 대신 이것만 사용할 것.",
+          "type": "object"
+        },
+        "db": {
+          "type": "string",
+          "description": "데이터베이스 파일명"
+        },
+        "n_folds": {
+          "type": "integer",
+          "description": "Walk-Forward Fold 수"
+        },
+        "rebal_period": {
+          "type": "integer",
+          "description": "리밸런싱 주기 (일)"
+        },
+        "cost_bps": {
+          "type": "integer",
+          "description": "거래 비용 (basis points)"
+        },
+        "max_turnover": {
+          "type": "number",
+          "description": "스로틀 적용 기준 최대 턴오버. turnover_capped <= max_turnover 보장.",
+          "default": 0.3
+        }
+      },
+      "required": ["flags_addon", "db", "n_folds", "rebal_period", "cost_bps", "max_turnover"]
+    },
+    "scenario": {
+      "type": "object",
+      "description": "DEPRECATED - 신뢰 불가. 다운스트림에서 읽지 말 것.",
+      "properties": {
+        "flags": {
+          "deprecated": true,
+          "description": "신뢰 불가/폐기. config_fingerprint.flags_addon 사용."
+        },
+        "addon": {
+          "type": "object",
+          "properties": {
+            "flags": {
+              "deprecated": true,
+              "description": "신뢰 불가/폐기. config_fingerprint.flags_addon 사용."
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "성과 요약 및 운영 KPI. rebalancing_log로부터 재계산 가능해야 함.",
+      "properties": {
+        "mean_sharpe": {
+          "type": "number",
+          "description": "OOS Sharpe 평균"
+        },
+        "min_sharpe": {
+          "type": "number",
+          "description": "OOS Sharpe 최소값"
+        },
+        "pos_folds": {
+          "type": "integer",
+          "description": "양수 Sharpe Fold 수"
+        },
+        "oos_is_ratio": {
+          "type": "number",
+          "description": "OOS/IS Sharpe 비율"
+        },
+        "turnover_mean": {
+          "type": "number",
+          "description": "평균 턴오버. rebalancing_log.turnover_capped의 mean으로 계산."
+        },
+        "turnover_p95": {
+          "type": "number",
+          "description": "95백분위 턴오버"
+        },
+        "turnover_max": {
+          "type": "number",
+          "description": "최대 턴오버"
+        },
+        "throttle_hit_rate": {
+          "type": "number",
+          "description": "스로틀 발동 비율. rebalancing_log.throttle_hit의 mean으로 계산."
+        },
+        "throttle_hit_count": {
+          "type": "integer",
+          "description": "스로틀 발동 횟수"
+        },
+        "metrics_reliable": {
+          "type": "boolean",
+          "description": "계측/로깅 비활성화 시 false. false면 다운스트림은 '재실행 필요' 상태로 분기.",
+          "default": true
+        }
+      },
+      "required": [
+        "mean_sharpe",
+        "min_sharpe",
+        "pos_folds",
+        "oos_is_ratio",
+        "turnover_mean",
+        "turnover_p95",
+        "turnover_max",
+        "throttle_hit_rate",
+        "throttle_hit_count",
+        "metrics_reliable"
+      ]
+    },
+    "oos": {
+      "type": "object",
+      "description": "OOS 성과 벡터",
+      "properties": {
+        "fold_sharpes": {
+          "type": "array",
+          "items": {"type": "number"},
+          "description": "길이는 config_fingerprint.n_folds와 일치해야 함. 누락 시 실패 처리."
+        }
+      },
+      "required": ["fold_sharpes"]
+    },
+    "rebalancing_log": {
+      "type": "array",
+      "description": "리밸런싱별 턴오버/스로틀 로그. summary KPI는 이 로그로부터 재계산 가능해야 함.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "리밸런싱 날짜"
+          },
+          "turnover_raw": {
+            "type": "number",
+            "description": "스로틀 적용 전 턴오버. 0.5*Σ|w_new - w_prev|"
+          },
+          "turnover_capped": {
+            "type": "number",
+            "description": "스로틀 적용 후 턴오버. turnover_capped <= max_turnover"
+          },
+          "throttle_hit": {
+            "type": "boolean",
+            "description": "스로틀 발동 여부. (turnover_raw > max_turnover)"
+          }
+        },
+        "required": ["turnover_raw", "turnover_capped", "throttle_hit"]
+      }
+    },
+    "known_data_issues": {
+      "type": "array",
+      "description": "알려진 데이터/메타데이터 문제. 다운스트림은 이를 보고 '재실행 필요' 상태로 분기 가능.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "이슈 코드 (예: KDI-001)"
+          },
+          "description": {
+            "type": "string",
+            "description": "이슈 설명"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["OPEN", "MITIGATED", "RESOLVED"],
+            "description": "이슈 상태"
+          }
+        },
+        "required": ["code", "description"]
+      }
+    }
+  },
+  "required": ["config_fingerprint", "summary", "oos"],
+  "additionalProperties": true,
+  "rules": {
+    "consistency": [
+      "summary.turnover_mean = mean(rebalancing_log[*].turnover_capped)",
+      "summary.turnover_max = max(rebalancing_log[*].turnover_capped)",
+      "summary.throttle_hit_rate = mean(rebalancing_log[*].throttle_hit)",
+      "summary.throttle_hit_count = sum(rebalancing_log[*].throttle_hit)",
+      "len(oos.fold_sharpes) == config_fingerprint.n_folds"
+    ],
+    "validation": [
+      "turnover_capped <= config_fingerprint.max_turnover (항상)",
+      "metrics_reliable=false 또는 known_data_issues 존재 시 → 다운스트림 '재실행 필요' 분기"
+    ]
+  }
+}

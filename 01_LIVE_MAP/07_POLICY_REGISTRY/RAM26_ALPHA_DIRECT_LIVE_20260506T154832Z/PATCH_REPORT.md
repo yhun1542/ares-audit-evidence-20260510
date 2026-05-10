@@ -1,0 +1,74 @@
+# ARES KIS-ONLY Consistency Patch — ARES_KIS_ONLY_CONSISTENCY_20260507T141042Z
+
+Apply mode : false
+Generated  : 2026-05-07T14:10:45Z
+
+## Verdict
+`ARES_KIS_ONLY_CONSISTENCY_DRYRUN_OK`
+
+## Pre-snapshot
+```json
+{
+  "ts": "20260507T141042Z",
+  "writes_target": {
+    "ares:broker:active": {"current": "", "target": "kis"},
+    "aub:v1:trading:broker": {"current": "ibkr", "target": "kis"},
+    "ares:trading:enabled": {"current": "false", "target": "true"},
+    "ares:trading:broker": {"current": "", "target": "kis"},
+    "ares:broker:current": {"current": "", "target": "kis"},
+    "ares:ops:trading_enabled": {"current": "false", "target": "true"}
+  },
+  "orphans": {
+    "ibkr:account:buying_power": {"type": "string", "preview": "4028887.60"},
+    "ibkr:account:net_liquidation": {"type": "string", "preview": "1009134.26"},
+    "ibkr:account:values": {"type": "string", "preview": "{\"AccountType\": {\"value\": \"INDIVIDUAL\", \"currency\": \"\"}, \"Cushion\": {\"value\": \"0.998105\", \"currency\": \"\"}, \"DayTradesRemaining\": {\"value\": \"-1\", \"currency\": \"\"}, \"DayTradesRemainingT+1\": {\"value\": \"-1\", \"currency\": \"\"}, \"DayTradesRemainingT+2\": {\"value\": \"-1\", \"currency\": \"\"}, \"DayTradesRemainingT+3\": {\"value\": \"-1\", \"currency\": \"\"}, \"DayTradesRemainingT+4\": {\"value\": \"-1\", \"currency\": \"\"}, \"LookAheadNextChange\": {\"value\": \"0\", \"currency\": \"\"}, \"AccruedCash\": {\"value\": \"1912.36\", \"currency\": \"USD\"}, \"AvailableFunds\": {\"value\": \"1007221.90\", \"currency\": \"USD\"}, \"BuyingPower\": {\"value\": \"4028887.60\", \"currency\": \"USD\"}, \"EquityWithLoanValue\": {\"value\": \"1007221.90\", \"currency\": \"USD\"}, \"ExcessLiquidity\": {\"value\": \"1007221.90\", \"currency\": \"USD\"}, \"FullAvailableFunds\": {\"value\": \"1007221.90\", \"currency\": \"USD\"}, \"FullExcessLiquidity\": {\"value\": \"1007221.90\", \"currency\": \"USD\"}, \"FullInitMarginReq\": {\"value\": \"0.00\", \"currency\": \"USD\"}, \"FullMaintMarginReq\": {\"value\": \"0.00\", \"currency\": \"USD\"}, \"GrossPositionValue\": {\"value\": \"0.00\", \"currency\": \"USD\"}, \"InitMarginReq\": {\"value\": \"0.00\", \"currency\": \"USD\"}, \"LookAheadAvailableFunds\": {\"value\": \"1007221.90\", \"currency\": \"USD\"}, \"LookAheadExcessLiquidity\": {\"value\": \"1007221.90\", \"currency\": \"USD\"}, \"LookAheadInitMarginReq\": {\"value\": \"0.00\", \"currency\": \"USD\"}, \"LookAheadMaintMarginReq\": {\"value\": \"0.00\", \"currency\": \"USD\"}, \"MaintMarginReq\": {\"value\": \"0.00\", \"currency\": \"USD\"}, \"NetLiquidation\": {\"value\": \"1009134.26\", \"currency\": \"USD\"}, \"PreviousDayEquityWithLoanValue\": {\"value\": \"1007221.90\", \"currency\": \"USD\"}, \"RegTEquity\": {\"value\": \"1009134.26\", \"currency\": \"USD\"}, \"RegTMargin\": {\"value\": \"0.00\", \"currency\": \"USD\"}, \"SMA\": {\"value\": \"1009134.26\", \"currency\": \"USD\"}, \"TotalCashValue\": {\"value\": \"1007221.90\", \"currency\": \"USD\"}}"},
+    "ibkr:account:cash": {"type": "string", "preview": "1007221.90"},
+    "ibkr:portfolio": {"type": "string", "preview": "{\"source\": \"PAPER_V670\", \"account\": \"PAPER_TRADING\", \"totalValue\": 1000000, \"cash\": 300000, \"buyingPower\": 1000000, \"dayPnl\": 0, \"unrealizedPnl\": 0, \"realizedPnl\": 0, \"positions\": [{\"symbol\": \"BIL\", \"weight\": 2872.8885, \"quantity\": 2872888, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"AMD\", \"weight\": 1119.9589, \"quantity\": 1119958, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"TSLA\", \"weight\": 1114.3041, \"quantity\": 1114304, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"META\", \"weight\": 1114.2907, \"quantity\": 1114290, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"GOOGL\", \"weight\": 1106.0229, \"quantity\": 1106022, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"NVDA\", \"weight\": 1042.9305, \"quantity\": 1042930, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"MSFT\", \"weight\": 593.085, \"quantity\": 593085, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"AMZN\", \"weight\": 577.0902, \"quantity\": 577090, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"INTC\", \"weight\": 395.685, \"quantity\": 395685, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"AAPL\", \"weight\": 395.685, \"quantity\": 395685, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"NFLX\", \"weight\": 395.685, \"quantity\": 395685, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}], \"lastUpdate\": \"2026-01-23T17:36:09.658697Z\"}"},
+    "ibkr:paper:portfolio": {"type": "string", "preview": "{\"source\": \"PAPER_V670\", \"account\": \"PAPER_TRADING\", \"totalValue\": 1000000, \"cash\": 300000, \"buyingPower\": 1000000, \"dayPnl\": 0, \"unrealizedPnl\": 0, \"realizedPnl\": 0, \"positions\": [{\"symbol\": \"BIL\", \"weight\": 2872.8885, \"quantity\": 2872888, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"AMD\", \"weight\": 1119.9589, \"quantity\": 1119958, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"TSLA\", \"weight\": 1114.3041, \"quantity\": 1114304, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"META\", \"weight\": 1114.2907, \"quantity\": 1114290, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"GOOGL\", \"weight\": 1106.0229, \"quantity\": 1106022, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"NVDA\", \"weight\": 1042.9305, \"quantity\": 1042930, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"MSFT\", \"weight\": 593.085, \"quantity\": 593085, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"AMZN\", \"weight\": 577.0902, \"quantity\": 577090, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"INTC\", \"weight\": 395.685, \"quantity\": 395685, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"AAPL\", \"weight\": 395.685, \"quantity\": 395685, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}, {\"symbol\": \"NFLX\", \"weight\": 395.685, \"quantity\": 395685, \"avgPrice\": 100.0, \"currentPrice\": 100.0, \"pnl\": 0, \"pnlPercent\": 0}], \"lastUpdate\": \"2026-01-23T17:36:09.658697Z\"}"},
+    "ibkr:connection:status": {"type": "string", "preview": "disconnected"},
+    "broker:ibkr": {"type": "string", "preview": "{\"broker\": \"ibkr\", \"name\": \"Interactive Brokers\", \"connected\": false, \"mode\": \"paper\", \"host\": \"127.0.0.1\", \"port\": 4002, \"error\": \"Port 4002 not responding\", \"last_check\": \"2026-01-29T06:16:27.928823\"}"}
+  }
+}
+```
+
+## Diff plan
+```
+=== Diff plan ===
+  [WILL-WRITE] ares:broker:active : '' -> 'kis'
+  [WILL-WRITE] aub:v1:trading:broker : 'ibkr' -> 'kis'
+  [WILL-WRITE] ares:trading:enabled : 'false' -> 'true'
+  [WILL-WRITE] ares:trading:broker : '' -> 'kis'
+  [WILL-WRITE] ares:broker:current : '' -> 'kis'
+  [WILL-WRITE] ares:ops:trading_enabled : 'false' -> 'true'
+
+=== Orphan IBKR keys (BACKUP only, no delete) ===
+  ibkr:account:buying_power (type=string)
+  ibkr:account:net_liquidation (type=string)
+  ibkr:account:values (type=string)
+  ibkr:account:cash (type=string)
+  ibkr:portfolio (type=string)
+  ibkr:paper:portfolio (type=string)
+  ibkr:connection:status (type=string)
+  broker:ibkr (type=string)
+```
+
+## Post-snapshot
+```json
+{
+  "ts": "20260507T141044Z",
+  "writes_target": {
+    "ares:broker:active": "",
+    "aub:v1:trading:broker": "ibkr",
+    "ares:trading:enabled": "false",
+    "ares:trading:broker": "",
+    "ares:broker:current": "",
+    "ares:ops:trading_enabled": "false"
+  }
+}
+```
+
+## Guardrails respected
+- No production stream write (stream:fills, broker:truth:*, ssot:* untouched)
+- No PM2 restart
+- No SAFE/Champion change
+- Orphan IBKR keys backed up only, not deleted (manual DEL pending)

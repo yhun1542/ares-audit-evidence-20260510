@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260105_103024",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 12.847,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 33.882,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 41.541,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 16.965,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "e0da7962e785"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 12.847,
+      "text": "# AUB Status Acknowledged\n\n## Assessment\n\n| Metric | Value | Status |\n|--------|-------|--------|\n| OOS Mean | 1.88 | ✅ Strong |\n| OOS Min | 0.43 | ✅ Positive |\n| Exposure | 47-84% | ✅ Reasonable |\n| Degenerate Folds | 0 | ✅ Clean |\n| Loop Count | 26 | 🔄 Running |\n\n## Observations\n\n1. **Missing champion filename** - field is empty, unusual for a handoff with valid metrics\n2. **Healthy OOS performance** - mean Sharpe ~1.88 with min fold still positive\n3. **No degeneracy** - all folds producing valid signals\n4. **Runtime nominal** - ~2h41m elapsed, ~1d21h remaining\n\n## Awaiting\n\nNo commands specified in handoff. System appears to be running autonomously.\n\nReady to receive next directive or continue monitoring. 🟢",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 33.882,
+      "text": "You’ve got a valid “current champion” snapshot, but a couple fields look incomplete/odd, so before issuing “next commands” I’d clarify intent and patch the bookkeeping.\n\n## What this handoff says (quick read)\n- **Champion metrics**\n  - `oos_mean = 1.8815`, `oos_min = 0.4315` (min fold/period is much weaker than mean → performance dispersion risk)\n  - **Exposure range**: `0.4746 … 0.8442` (not fully invested; seems constrained but not extreme)\n  - `degenerate_folds = []` (good)\n- **Potential issues**\n  - `file:` is **blank** → champion artifact path wasn’t recorded (hard to reproduce/ship).\n  - `worst_mdd: None` → either MDD wasn’t computed, failed, or is not wired into reporting. This is a red flag if MDD is a gating metric.\n- **Runloop**\n  - Loop count 26, plenty of remaining time (~1d 21h).\n\n## What I need from you to proceed\n1. What is the goal of “Next Commands” here?\n   - (A) continue the runloop exploration,\n   - (B) promote/export the champion,\n   - (C) add risk gates (e.g., MDD, exposure cap) and re-rank,\n   - (D) debug why `file` and `worst_mdd` are missing.\n2. What does **oos_mean / oos_min** represent in your system (Sharpe? CAGR? objective score)? The numbers suggest it’s not raw return, but I don’t want to assume.\n\n## Suggested immediate next steps (if you want “safe continuation”)\n1. **Locate and pin the champion artifact**\n   - Recover the output path by `run_hash=db08d79b484756ab` and/or `lane_hash=21b5700bf9943671`.\n   - Update the record so `file:` is populated.\n2. **Compute / backfill `worst_mdd`**\n   - Re-run the evaluation step for the champion only (cheap) and ensure drawdown is computed on the same OOS slices used for `oos_min`.\n3. **Add a stability gate** (optional but recommended given low `oos_min`)\n   - Examples: require `oos_min >= X` or require dispersion (std across folds) <= Y.\n4. **Then resume the runloop**\n   - Continue searching, but make MDD (and any other risk) a first-class criterion so you don’t crown a “paper winner.”\n\n## If you paste the “Next Commands” template\nIf you show me the expected format for those “3 lines” (the system usually has something like `aub run ...`, `aub eval ...`, `aub promote ...`), I can write the exact next 3 commands to:\n- backfill `file`,\n- compute `worst_mdd`,\n- re-rank/promote or continue.\n\nSend either:\n- the CLI/command schema your runner expects, **or**\n- a snippet of a previous handoff that includes filled “Next Commands”.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 41.541,
+      "text": "```bash\npython run.py --lane 21b5700bf9943671 --resume db08d79b484756ab --save-model\npython run.py --lane 21b5700bf9943671 --evolve --parents db08d79b484756ab\npython run.py --lane 21b5700bf9943671 --validate --full-oos\n```",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 16.965,
+      "text": "```\n## Next Commands (3 lines)\npython optimize.py --lane 21b5700bf9943671 --target oos_mean --iter 27\nevaluate_champion.py --run db08d79b484756ab --validate exposure\nlog_status.py --update 2026-01-05T10:30:00Z\n```\n\n## Acknowledgment\nHandoff received. Current champion viable (oos_mean=1.88, balanced exposure). Advancing to loop 27. Estimated completion: 2026-01-06 08:00 UTC.",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

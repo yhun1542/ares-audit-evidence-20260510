@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260111_092938",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 15.623,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 33.144,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 14.007,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "85fab5d701ff"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 15.623,
+      "text": "# AUB HANDOFF RESPONSE\n\n## Assessment\nBaseline shows **complete degeneracy** - zero exposure across all 19 folds. This is a fresh lane requiring initial strategy candidates. Any functional strategy should beat this.\n\n## Next Commands\n```\npython run_backtest.py --lane ost_v62_unified --strategy momentum_cross --lookback 20 --threshold 0.01\npython run_backtest.py --lane ost_v62_unified --strategy mean_reversion --zscore_window 14 --entry_z 2.0\npython run_backtest.py --lane ost_v62_unified --strategy trend_follow --ema_fast 8 --ema_slow 21\n```\n\n## Rationale\n- **momentum_cross**: Standard price momentum with 20-day lookback, low threshold to ensure trades fire\n- **mean_reversion**: Z-score based entry at 2σ deviation, robust across regimes\n- **trend_follow**: EMA crossover (8/21) as trend confirmation, historically stable OOS\n\nAll three are orthogonal strategy types to establish which regime the asset class favors before refinement.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 33.144,
+      "text": "Your “champion” looks degenerate: **exposure_min/max = 0.0/0.0** strongly suggests the strategy never takes risk (no positions), and **degenerate_folds = [1..19]** implies every CV fold produced an invalid/empty trading simulation (or got filtered out). The OOS numbers you see may be coming from a fallback metric path (e.g., loss computed on empty positions, NaNs being filled, or a baseline being used), so I would not treat this as a real champion yet.\n\n### Likely causes (highest probability first)\n1. **Exposure constraints force flat portfolio**\n   - gross/net exposure caps at 0\n   - min_trade_notional too high\n   - max_leverage = 0\n   - risk model rejects all assets (all vol/liq screens fail)\n\n2. **Signal is effectively zero everywhere**\n   - model outputs constant 0 after normalization/clipping\n   - feature pipeline returns all-NaN then gets filled to 0\n   - overly aggressive winsorization / z-scoring on tiny universes\n\n3. **Universe becomes empty in OOS folds**\n   - eligibility filters too strict (liq/price/sector/borrow)\n   - corporate action mapping missing → symbols dropped\n   - alignment issue between returns and features causes all rows to be removed\n\n4. **Backtester is discarding trades**\n   - turnover constraint, transaction cost, or “no short” constraint blocks all orders\n   - order sizing rounds to 0 due to lot size / integer share constraints\n\n---\n\n## Next Commands (3 lines)\nI don’t know your exact CLI, so here are **three “next steps” commands** in generic form—tell me your tool’s command names and I’ll rewrite them exactly:\n\n1) **Run a single fold with maximum logging and dump position/exposure diagnostics**\n```\nrun_backtest --lane ost_v62_unified --run unified_baseline --fold 1 --verbose --dump positions,exposure,orders,rejections\n```\n\n2) **Dump signal and universe statistics for that same fold/date range**\n```\ninspect_data --lane ost_v62_unified --fold 1 --stats universe_count,eligible_count,signal_mean,signal_std,signal_pct_nonzero,nan_rate\n```\n\n3) **Print the effective constraints/risk settings actually used**\n```\nshow_config --lane ost_v62_unified --run unified_baseline --effective --keys exposure,max_leverage,turnover,shorting,min_notional,lot_size,filters\n```\n\n---\n\n### What I need from you to make this precise\nPaste any one of the following and I’ll give exact commands + the most probable root cause:\n- the run/config YAML (constraints + filters + sizing)\n- a snippet of the fold-1 logs around “eligibility / order generation”\n- the schema for your CLI (what commands exist)\n\nAlso: is **worst_mdd: None** expected in your system when there are **no trades**? If yes, that further confirms the strategy stayed flat.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 14.007,
+      "text": "train lane_hash=ost_v63_unified folds=1-20\nevaluate_oos\nupdate_champion",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

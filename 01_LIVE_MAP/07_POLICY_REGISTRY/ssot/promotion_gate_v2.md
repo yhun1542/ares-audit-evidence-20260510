@@ -1,0 +1,11 @@
+# Champion Promotion Gate v2
+- CAGR >= incumbent
+- Sharpe >= incumbent
+- MDD <= incumbent + tolerance
+- Win rate >= incumbent - tolerance
+- realized implementation shortfall < 5bps
+- rejection_rate < 3%
+- partial_fill_rate > 92%
+- risk_off_false_positive_rate < 30%
+- exposure_crash_days = 0
+- turnover_spike_days = 0

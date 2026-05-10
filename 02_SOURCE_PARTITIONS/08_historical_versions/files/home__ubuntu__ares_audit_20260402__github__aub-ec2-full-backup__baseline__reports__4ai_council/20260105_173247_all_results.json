@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260105_173247",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 21.574,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 102.823,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 22.946,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 13.645,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "3e975b34d03e"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 21.574,
+      "text": "# Handoff Acknowledged\n\n## Summary\n\n| Metric | Champion (v5) | Last PASS Candidate |\n|--------|---------------|---------------------|\n| Tuning Mean | **1.904** | 1.762 |\n| Tuning Min | **0.431** | 0.051 ⚠️ |\n| Lockbox Mean | 1.793 | 1.793 |\n| Lockbox Min | 1.134 | **1.347** |\n| Worst MDD | **-9.3%** | -11.2% |\n\n## Assessment\n\nChampion correctly retained. The candidate's tuning_min of 0.051 is a significant fragility signal—near-zero Sharpe in one fold indicates regime sensitivity that could surface in live trading despite similar lockbox means.\n\n## Notable Pattern\nCandidate shows better lockbox_min (+19% improvement) but worse tuning_min (-88%). This divergence suggests the macro_alpha_shadow module may be capturing something real but needs regularization to avoid overfitting to favorable folds.\n\n## Suggested Focus Areas\n1. **Regime robustness**: Investigate which fold the candidate struggles with\n2. **Ensemble potential**: Candidate's lockbox floor improvement might complement champion in a blend\n3. **MDD constraint**: Consider adding explicit drawdown penalty to search criteria\n\n## System Health\n✅ Loop running normally (92 iterations, ~38h remaining)  \n✅ No stuck INCONCLUSIVE candidates  \n✅ Next commands ready to execute\n\nProceed with the three specified commands to continue exploration.",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 102.823,
+      "text": "### Status interpretation (what matters right now)\n\n- **Champion v5_latest** is still the best overall:  \n  - Higher **tuning_mean** (1.904 vs 1.762) with a **much safer tuning_min** (0.431 vs 0.051).  \n  - **Lockbox_mean** is essentially tied (~1.793).  \n  - Candidate’s main advantage is **lockbox_min** (1.347 vs 1.134), but it comes with **worse drawdowns** (worst_mdd -0.112 vs -0.093).  \n- Your current limiting risk metric is clearly **MDD** (fold14 is the worst and also equals worst_mdd for the champion).\n\nNet: keep champion; next exploration should prioritize **reducing worst_mdd / fold14_mdd** while trying to lift **lockbox_min** without sacrificing the drawdown profile.\n\n---\n\n### What to do next (run the queued 3 commands)\n\nRun these exactly as listed:\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n**Expected outcome:**\n1) `aub_autopilot ... --select-best` should either reaffirm the champion or promote a clearly superior module-level variant.  \n2) `system_autopilot` should try higher-level combinations (where you often get MDD improvements).  \n3) `aub_next_fix` should generate a concrete “what to fix next” doc—this is the fastest way to turn the fold14 MDD signal into targeted changes.\n\n---\n\n### Selection criteria suggestion (to keep the runloop from drifting)\n\nGiven how close lockbox_mean is between variants, I’d recommend promoting a new champion only if it meets something like:\n\n- **worst_mdd improves** (less negative) vs **-0.0931**, *or at minimum* does not degrade beyond e.g. **-0.095**, AND\n- **lockbox_min** is **≥ current 1.1337** (preferably higher), AND\n- **lockbox_mean** is not worse by more than a small tolerance (e.g. -0.02) unless MDD improves meaningfully.\n\nThis keeps you from accepting “pretty lockbox mins” that are bought with materially worse tail risk (what happened with the last PASS candidate).\n\n---\n\n### After the runs complete (what to paste back if you want a tight recommendation)\nShare:\n- the newly selected best file(s),\n- tuning_mean/min, lockbox_mean/min,\n- fold14_mdd and worst_mdd,\n- and (if available) which module/system diffs were applied.\n\nI can then tell you whether to promote, keep champion, or constrain the search (e.g., impose an MDD cap or focus exploration on components most correlated with fold14 drawdown).",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 22.946,
+      "text": "**System Status Analysis - Handoff 20260105_173232**\n\n**1. Champion vs. Challenger Analysis**\n*   **Current Champion (`champion_v5_latest`)**: Demonstrates superior stability. The tuning minimum of **0.43** is significantly stronger than the challenger's, indicating the strategy handles various regimes well during validation. Max drawdown is kept tight at **-9.3%**.\n*   **Last Candidate (`exp_macro_alpha_shadow`)**: Although it achieved a higher Lockbox minimum (**1.34**), its Tuning minimum was critically low (**0.05**). This divergence suggests overfitting to specific regimes or instability in certain market conditions (high variance). The deeper drawdown (**-11.2%**) further justifies retaining the current champion.\n\n**2. Loop Telemetry**\n*   **Throughput**: 92 loops completed in ~9.7 hours (~6.3 minutes per loop).\n*   **Schedule**: On track with ~38 hours remaining.\n\n**3. Immediate Action Plan**\nProceeding with the defined autopilot sequence to refine the module registry and evaluate new system candidates.\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 13.645,
+      "text": "### Status Summary\n- **Current Champion** (`baseline/champion_v5_latest.json`): Strong performance with high tuning mean (1.90), solid lockbox stability (min 1.13), and best MDDs (-0.093 across fold14/worst). This remains the benchmark.\n- **Last PASS Candidate** (`baseline/candidate_20260102_155322_exp_macro_alpha_shadow.json`): Competitive lockbox mean (1.79, slightly edges champion), but weaker tuning min (0.05), fold14 MDD (-0.10), and worst MDD (-0.11). **Does not dethrone champion**.\n- **INCONCLUSIVE**: None – clean slate.\n- **Runloop**: 92 loops complete (~9h44m elapsed), ~1.5 days remaining. Steady progress.\n\n### Key Insights\n| Metric          | Champion Value          | PASS Candidate Value    | Winner       |\n|-----------------|-------------------------|-------------------------|--------------|\n| Tuning Mean    | 1.904                  | 1.762                  | **Champion** |\n| Tuning Min     | 0.431                  | 0.051                  | **Champion** |\n| Lockbox Mean   | 1.793                  | 1.793                  | Tie         |\n| Lockbox Min    | 1.134                  | 1.347                  | PASS        |\n| Fold14 MDD     | -0.093                 | -0.100                 | **Champion** |\n| Worst MDD      | -0.093                 | -0.112                 | **Champion** |\n\n- Champion holds due to superior risk-adjusted returns (better MDDs) and tuning robustness.\n- PASS shows lockbox promise but tuning volatility – potential for hybrid tweaks.\n\n### Recommended Next Actions\nExecute the provided **Next Commands** in sequence (as-is, no mods needed):\n\n```bash\npython3 experiment_system/tools/aub_autopilot.py --registry experiment_system/config/module_registry.yaml --run --select-best\npython3 experiment_system/tools/system_autopilot.py --spec experiment_system/config/system_candidates.yaml --run\npython3 experiment_system/tools/aub_next_fix.py --registry experiment_system/config/module_registry.yaml --output baseline/reports/next_fix.md\n```\n\n- **Expected Outcome**: Auto-selects/promotes champion, generates new candidates, and outputs `next_fix.md` for review/prioritization.\n- **Watch For**: If new candidates beat champion's MDD threshold (e.g., < -0.095), flag for manual review.\n\nLoop looks healthy – keep it rolling! Ping if you need metric deep-dive, viz scripts, or custom analysis. 🚀",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}

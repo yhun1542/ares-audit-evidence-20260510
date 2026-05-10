@@ -1,0 +1,204 @@
+# ARES B-Series v2.5.1 Protected Keys Configuration (EC2 43.202.16.31)
+# Updated: 2026-04-19 03:42 KST
+# 
+# This YAML defines Redis key prefixes/patterns that B-Series modules MUST NEVER
+# write/delete. Discovered by direct EC2 Redis SCAN survey of the live production
+# instance running 33h+ with 17 active keys.
+#
+# Schema:
+#   protected_prefixes: Exact prefix matches (case-sensitive, fail-closed)
+#   protected_patterns: glob patterns for advanced matching
+#   protected_pm2: PM2 process names that B-Series MUST NEVER kill/restart
+#   read_allowed: Keys that B-Series MAY read but MUST NOT modify
+#   conditional_write: Keys with explicit B-module write permissions
+#
+# Enforcement: F22Guard.assert_writable() in addons/{bXX}/src/f22_guard.py
+#              and addons/common/src/ares_common/f22_guard.py
+
+version: "2.5.1"
+target_environment: "ec2-43.202.16.31"
+discovered_at: "2026-04-19T03:42:00+09:00"
+
+# ────────────────────────────────────────────────────────────────────
+# Tier 1: ABSOLUTE PROTECTION (any write attempt → critical alert + abort)
+# ────────────────────────────────────────────────────────────────────
+protected_prefixes:
+  # Legacy F22 prefixes (kept for forward compatibility)
+  - "f22:"
+  - "F22:"
+  - "ares:f22:"
+  - "ARES:F22:"
+  
+  # Production EC2 critical infrastructure
+  - "audit:"             # Audit logs (immutable)
+  - "feature:"           # Feature flags (manual ops only)
+  - "ssot:engine:"       # Single Source of Truth engine state
+  - "ssot:"              # Catch-all SSOT prefix
+  
+  # Live trading systems
+  - "emarkos:"           # emarkos trading system
+  - "broker:"            # Broker reconciliation state
+  - "order:"             # Order book state
+  - "fill:"              # Fill confirmations
+
+protected_patterns:
+  - "feature:*"
+  - "market:vix*"        # VIX market data (read-only for B-Series)
+  - "market:last_update*"
+  - "audit:migration_lock*"
+  - "ssot:engine:*"
+  - "emarkos:v*:*"
+
+# ────────────────────────────────────────────────────────────────────
+# Tier 2: PM2 PROCESSES B-Series MUST NEVER touch
+# ────────────────────────────────────────────────────────────────────
+protected_pm2:
+  # === F22 protection (single source = deploy/f22_protection_v2_5_1.yaml) ===
+  # required_online (trade-path critical)
+  - "nextgen2-live"
+  - "final-to-champion-bridge"
+  - "live-trading-kis"
+  # optional_online_any_of (one of these must exist depending on EC2 generation)
+  - "gpu-crash-sentinel-live"
+  - "ares-v56-live"
+  
+  # Legacy F22-style processes (kept for forward compatibility)
+  - "F22-OptionsTrader"
+  - "F22-RiskGuard"
+  - "F22-PriceCollar"
+  - "F22-LatencyMonitor"
+  
+  # Discovered EC2 critical processes (33h uptime, do not disturb)
+  - "ares-broker-truth-writer"
+  - "ares-runtime-guard"
+  - "ares-self-healing-guard"
+  - "ares-invariant-guard"
+  - "ares-invariant-checker"
+  - "ares-structural-guardian"
+  - "ares-contract-validator"
+  - "ares-sleeve-writer"
+  - "ares-ssot-coverage-override"
+  - "alpha_prod_sec_stream"
+  - "alert-rules"
+  - "alert-subscriber-v6"
+  - "feat-options-gex"
+  - "gpu-operational-risk-guard"
+  - "xgb-riskflag-writer-v2"
+
+# ────────────────────────────────────────────────────────────────────
+# Tier 3: READ-ONLY (B-Series may read but must NOT write)
+# ────────────────────────────────────────────────────────────────────
+read_allowed:
+  - "market:vix"
+  - "market:vix:current"
+  - "market:vix:updated_at"
+  - "market:vix:ts"
+  - "market:last_update"
+  - "ares:equity:metric_version"
+  - "ares:peak:metric_version"
+  - "signals:latest"
+  - "ssot:engine:autopilot_unlock_state"
+
+# ────────────────────────────────────────────────────────────────────
+# Tier 4: CONDITIONAL WRITES (only specific B-modules may write)
+# ────────────────────────────────────────────────────────────────────
+conditional_write:
+  # B01 price aggregator OWN namespace
+  "ares:b01:price:*":
+    allowed_modules: ["b01"]
+    rate_limit_per_sec: 100
+    require_canary_ok: true
+  
+  # B02 stale data sentinel OWN namespace
+  "ares:b02:heartbeat:*":
+    allowed_modules: ["b02"]
+    rate_limit_per_sec: 50
+    require_canary_ok: true
+  
+  # B03 dynamic risk scaler OWN namespace
+  "ares:b03:risk:*":
+    allowed_modules: ["b03"]
+    rate_limit_per_sec: 10
+    require_canary_ok: true
+    require_human_approval: true   # MDD gate triggers
+  
+  # B04 TWAP/VWAP slicer OWN namespace
+  "ares:b04:slice:*":
+    allowed_modules: ["b04"]
+    rate_limit_per_sec: 20
+    require_canary_ok: true
+    require_human_approval: true   # KIS live orders
+  
+  # B05 universe sync OWN namespace  
+  "ares:b05:universe:*":
+    allowed_modules: ["b05"]
+    rate_limit_per_sec: 5
+  
+  # B06 sidecar WAL OWN namespace
+  "ares:b06:wal:*":
+    allowed_modules: ["b06"]
+    rate_limit_per_sec: 200
+  
+  # B07 canary deployer OWN namespace
+  "ares:b07:canary:*":
+    allowed_modules: ["b07"]
+    rate_limit_per_sec: 5
+    require_human_approval: true
+  
+  # B08 debt pruner OWN namespace
+  "ares:b08:prune:*":
+    allowed_modules: ["b08"]
+    rate_limit_per_sec: 1
+    require_human_approval: true
+  
+  # B09 Prometheus exporter OWN namespace
+  "ares:b09:metric:*":
+    allowed_modules: ["b09"]
+    rate_limit_per_sec: 100
+  
+  # B10 news multiplier OWN namespace
+  "ares:b10:news:*":
+    allowed_modules: ["b10"]
+    rate_limit_per_sec: 10
+  
+  # B11 predictor daemon OWN namespace
+  "ares:b11:predict:*":
+    allowed_modules: ["b11"]
+    rate_limit_per_sec: 5
+  
+  # B12 auto-recovery sentinel OWN namespace
+  "ares:b12:recovery:*":
+    allowed_modules: ["b12"]
+    rate_limit_per_sec: 1
+    require_human_approval: true   # Self-heal actions
+
+# ────────────────────────────────────────────────────────────────────
+# Enforcement Settings
+# ────────────────────────────────────────────────────────────────────
+enforcement:
+  default_mode: "OBSERVE"          # OBSERVE | CANARY | ACTIVE
+  fail_closed: true                # Unknown keys → DENY
+  log_all_attempts: true
+  alert_on_violation: true
+  
+  # Kill-switch (centralized via B09 SafeRedisWriter)
+  kill_switch:
+    redis_key: "ares:b09:enabled"
+    env_var: "ARES_B09_ENABLED"
+    cache_ttl_sec: 5
+    fail_closed_on_redis_error: true
+  
+  # Canary phase: only ares:b07:canary:* writes allowed (5% traffic)
+  canary:
+    duration_min: 30
+    auto_rollback_on:
+      - mdd_pct_gt: 0.5
+      - error_rate_pct_gt: 1.0
+      - p99_latency_ms_gt: 500
+      - violation_count_gt: 0
+  
+  # ACTIVE promotion criteria (after CANARY 30min stable)
+  active:
+    require_human_approval: true
+    require_3ai_score_gte: 95
+    require_v241_regression_pass: true

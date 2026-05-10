@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "ts_utc": "20260110_203707",
+    "strict": true,
+    "attempts": 3,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 13.227,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 41.883,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 13.729,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      },
+      {
+        "name": "gemini",
+        "ok": false,
+        "model": null,
+        "elapsed_s": null,
+        "streaming": false,
+        "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+      }
+    ],
+    "missing_models": [
+      "gemini"
+    ],
+    "prompt_hash": "34050be6c605"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 13.227,
+      "text": "```\naub continue --lane 21b5700bf9943671\naub explore --from db08d79b484756ab --n-mutations 3\naub status --verbose\n```",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 41.883,
+      "text": "You’ve got a valid “champion” selected, but the handoff shows one obvious gap: **`worst_mdd: None`** means you either didn’t compute drawdown (or it failed), so you can’t yet judge tail risk even if the OOS metric looks good.\n\n### Quick read of the snapshot\n- **oos_mean = 1.8815**: strong average OOS score (assuming higher-is-better in your setup).\n- **oos_min = 0.4315**: at least one fold/period is much weaker → worth inspecting that fold for regime shift, leakage, or exposure spikes.\n- **exposure_min/max = 0.4746 / 0.8442**: strategy is **consistently fairly exposed** (not near-flat), and can get **quite high**—good if intended, risky if you expected tighter caps.\n- **degenerate_folds = []**: good; no folds collapsed (e.g., all-zero predictions, NaNs, etc.).\n- **lane_hash / run_hash**: identifiers to reproduce.\n\n### What I would do next (in order)\n1. **Compute drawdowns and basic risk stats** for the champion (MDD, volatility, downside deviation, etc.). Until `worst_mdd` is real, you don’t have a risk view.\n2. **Drill into the worst OOS fold/segment** corresponding to `oos_min`:\n   - check realized exposure, turnover, and PnL path\n   - compare feature distributions vs other folds (possible regime change)\n3. **Run a constrained/risk-regularized variant**:\n   - cap exposure (e.g., max 0.6–0.7) and/or\n   - add turnover penalty / stronger regularization\n   - see if oos_mean drops slightly but oos_min improves and MDD improves\n\n### “Next Commands (3 lines)” (template)\nI don’t know your exact CLI, so here are three *generic* command intents you can map to your tooling:\n\n1) Compute MDD / risk report for the champion:\n```bash\naub eval --run db08d79b484756ab --lane 21b5700bf9943671 --metrics mdd,dd_curve,vol,sortino\n```\n\n2) Explain / slice performance by fold (to find what drove `oos_min`):\n```bash\naub slice --run db08d79b484756ab --by fold,month --include exposure,turnover,pnl\n```\n\n3) Launch a new lane with tighter exposure (or stronger regularization) to improve worst-case:\n```bash\naub train --from-run db08d79b484756ab --set exposure_max=0.70 --set reg_lambda=+25% --new-lane\n```\n\nIf you paste the actual command format your AUB runner expects (or the last few commands you used), I can rewrite those into the exact 3 valid lines for your environment.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": false,
+      "error": "gemini_error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ', 'status': 'RESOURCE_EXHAUSTED'}}"
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 13.729,
+      "text": "generate_candidates --n 32 --target oos_mean --min_exp 0.4\nevaluate_parallel --max_workers 16 --timeout 3600\npromote_champion --threshold 1.8",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": false
+}

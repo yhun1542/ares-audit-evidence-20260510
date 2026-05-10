@@ -1,0 +1,94 @@
+# ARES PM2 운영 정책 (Part 7 STRUCT-FIX)
+
+본 문서는 Jason Alert RCA Part 7에서 식별된 다섯 종류의 침묵형 결함이 다시
+발생하지 않도록 강제되는 운영 표준을 정의한다. 정책은 *권고가 아니라 강제 절차*이며,
+신규 작업자/스케줄러/봇 모두 본 문서의 절차를 따라야 한다.
+
+## 1. SSOT 환경 변수
+
+* 단일 정답 위치: `/etc/ares/redis.env`
+* 모든 SSH/cron/systemd 세션에서 자동으로 적재되어야 한다.
+  * `/etc/environment` 에 `REDIS_URL` 미러링 (시스템 전역 PAM env)
+  * `~/.bashrc`, `~/.profile` 에 `set -a; . /etc/ares/redis.env; set +a` 포함
+* PM2 프로세스는 *반드시* `--update-env` 플래그와 함께 시작되어야 한다.
+
+## 2. PM2 시작/재시작
+
+| 시도 동작 | 금지 명령 | 강제 명령 |
+|---|---|---|
+| 신규 등록 | `pm2 start ...` | `pm2-safe-start start ...` |
+| 환경 갱신 재시작 | `pm2 restart NAME` | `pm2-safe-start restart NAME` |
+| 영구화 | (생략) | `pm2 save` (post-deploy-hook가 자동 호출) |
+
+`pm2-safe-start` 는 다음을 자동 수행한다.
+
+1. `/etc/ares/redis.env` 를 source
+2. 누락된 `--update-env` 자동 부착
+3. `pre-deploy-validate.sh` 호출 (스크립트 존재 / 인터프리터 / wrapper 인자 검증)
+
+## 3. Drift Baseline 계약
+
+* SSOT 파일: `/home/ubuntu/ares_current/scripts/pm2_baseline.json`
+* 의도된 PM2 변경 후 *반드시* 다음을 호출한다.
+  * `bash /usr/local/bin/post-deploy-hook`
+  * 이 훅은: pm2 save → baseline merge → critical marker 적용 → drift 0건 확인 → Redis 로그 기록
+* drift_check 결과가 *No drift detected* 가 아니면 Jason 알림이 발화되므로
+  반드시 훅을 통해 0건으로 정렬하고 종료한다.
+
+## 4. Critical 등급
+
+`baseline_critical_marker.py` 가 다음 프로세스에 `critical=true` 를 마킹한다.
+이들은 PROCESS_REMOVED / NOT_ONLINE 시 P1 (즉시 페이지) 으로 escalate 된다.
+
+* 정지/리스크 권위: `ares-halt-reconciler`, `ares-invariant-guard`,
+  `ares-invariant-checker`, `ares-system-invariant-checker`, `halt-bridge`,
+  `halt-actuator`
+* 거래 게이트/실행: `go-nogo-judge`, `live-trading-kis`,
+  `kill-switch-authority`, `kis-balance-sync-v4-promoter`, `ssot-writer-v2`
+* 알람/관측 기반: `alarm-bridge-telegram`, `redis-env-sentinel`,
+  `cycle-progress-watchdog`, `t3-ts-fallback-watcher`
+
+## 5. Cycle 진척 감시
+
+* `watchdog-monitor` 는 PNL/scaleFactor 같은 *지표* 만 본다 → 사이클이 멈춰도
+  sidecar 가 PM2 status=online 을 보고하면 침묵한다.
+* `cycle-progress-watchdog` 는 *각 producer 가 사이클 종료 시에만 갱신하는
+  SSOT 키* 의 age 를 직접 측정해 logical progress 를 검증한다.
+* HALT (`ares:halt:active|active_v2|trade:halt`) 가 활성인 동안 producer 가
+  사이클을 자발적으로 멈추는 것은 정상이므로 `suppressIfHalted=true` 키는
+  알람을 발화하지 않는다.
+
+## 6. 잘못된 패턴 (Anti-patterns)
+
+* `pm2 start <ecosystem.cjs>` 호출 시 PM2 가 ecosystem 파일 자체를 스크립트로
+  실행해 이름이 `ecosystem.X` 로 등록되는 사례가 발생한 바 있다 (Part 7).
+  반드시 `pm2 start <ecosystem.cjs>` 후 `pm2 describe NAME` 으로 등록 이름을
+  검증한다. 이름이 ecosystem 파일명이면 즉시 delete 후 `pm2 start <real-script>
+  --name NAME` 로 재등록한다.
+* Wrapper script (`run_py_with_env.sh` 등) 사용 시 PM2 인자에 *반드시* 대상
+  `.py` 를 명시적으로 전달한다. 빈 args 는 `[ARES_RUNNER_FATAL]
+  reason=no_target_script` 를 유발해 무한 재시작 loop 를 만든다.
+* HALT 키 SSOT 가 v1 (`ares:halt:active`) 에서 v2 (`ares:halt:active_v2`) 로
+  전환된 경우, 새 컨슈머 코드는 *반드시* 두 키를 OR 로 평가해야 한다.
+
+## 7. 변경 이력
+
+| 버전 | 날짜 | 변경 |
+|---|---|---|
+| v1 | 2026-04-24 | Part 7 RCA 결과로 신설 |
+
+## 8. Cash Invariant 폐기 정책 (Part 8)
+
+* `INV3_CASH_POS_NEQ_ASSET` (v610), `INV3A_BOOK_VIEW_MISMATCH` (v611),
+  `INV3A_V612_MISMATCH` (v612) 세 invariant 는 settled / unsettled cash 의
+  처리 방식 차이 (T+2 결제 시점 차) 때문에 항상 false-positive SEV1 을 생성하는
+  구조적 결함이 있었다.
+* 따라서 cash-orderable-computer v610 / v611 / v612 코드는
+  `/home/ubuntu/ares_current/deprecated_p8/` 로 격리되었으며, 메인 위치에는
+  실수 실행 방지를 위한 stub 만 남겨둔다.
+* Cash drift 의 SSOT 는 `cash-drift-watcher v1.2`
+  (`ares_current/ops/cash_drift_watcher.py`) 단일 컴포넌트이며, 비교 차원은
+  `snapshot_internal_vs_broker` 1 종으로 한정한다 (현재 drift_pct ≈ 0.05%).
+* 새로운 invariant 를 도입하려면, 먼저 settled / unsettled / reserved 의 분개
+  정의서를 `/etc/ares/cash_book.md` 로 작성하고 cash-drift-watcher 컨센서스
+  로직 (MIN_AGREE_FOR_L2PLUS) 안에 등재하는 절차를 거친다.

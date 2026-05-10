@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+CONFIRM="${RAM26_ALL_GATES_NATIVE_VERIFY_CONFIRM:-}"
+if [[ "$CONFIRM" != "YES_VERIFY_NATIVE_BRIDGE_ALL_GATES" ]]; then
+  echo "RAM26_ALL_GATES_NATIVE_VERIFY_CONFIRM must be YES_VERIFY_NATIVE_BRIDGE_ALL_GATES"
+  exit 2
+fi
+
+REDIS_ENV="${REDIS_ENV:-/etc/ares/redis.env}"
+PROMOTION_ROOT="${PROMOTION_ROOT:-/home/ubuntu/ares_promotions/RAM26_ALPHA_DIRECT_LIVE_20260506T154832Z}"
+TS="$(date -u +%Y%m%dT%H%M%SZ)"
+OUT_DIR="${PROMOTION_ROOT}/native_bridge_v2/${TS}_verify"
+mkdir -p "$OUT_DIR"
+
+if [[ -f "$REDIS_ENV" ]]; then set -a; source "$REDIS_ENV"; set +a; fi
+REDIS_CLI=(redis-cli)
+if [[ -n "${REDIS_URL:-}" ]]; then
+  if [[ "$REDIS_URL" == rediss://* ]]; then REDIS_CLI=(redis-cli -u "$REDIS_URL" --tls --insecure); else REDIS_CLI=(redis-cli -u "$REDIS_URL"); fi
+fi
+redis_get(){ "${REDIS_CLI[@]}" --raw GET "$1" 2>/dev/null || true; }
+redis_hlen(){ "${REDIS_CLI[@]}" --raw HLEN "$1" 2>/dev/null || echo 0; }
+
+# allow G8 a few seconds to observe
+for _ in $(seq 1 20); do
+  [[ "$(redis_get ares:open009:g8:status)" == "READY" ]] && break
+  sleep 1
+done
+
+{
+  for k in ssot:target:v2:current policy:champion:active ares:bridge:active ares:bridge:producer ares:open009:g8:status policy:override:active ram26:engine:gate:last trading:enabled emarkos:v1:mode kill-switch:active; do
+    echo "--- $k ---"; redis_get "$k"
+  done
+  echo "HLEN champion:targets:ssot=$(redis_hlen champion:targets:ssot)"
+  echo "HLEN champion:target=$(redis_hlen champion:target)"
+} > "$OUT_DIR/snapshot.txt"
+
+python3 - "$OUT_DIR/snapshot.txt" "$OUT_DIR/all_gates.json" <<'PY'
+import json,re,sys,time
+from pathlib import Path
+txt=Path(sys.argv[1]).read_text()
+def sec(k):
+    m=re.search(rf"--- {re.escape(k)} ---\n(.*?)(?=\n--- |\nHLEN |\Z)",txt,re.S)
+    return m.group(1).strip() if m else ""
+def load(k):
+    try: return json.loads(sec(k))
+    except Exception: return {}
+def hlen(k):
+    m=re.search(rf"HLEN {re.escape(k)}=(\d+)",txt)
+    return int(m.group(1)) if m else 0
+ssot=load("ssot:target:v2:current")
+policy=load("policy:champion:active")
+override=load("policy:override:active")
+engine=load("ram26:engine:gate:last")
+now=int(time.time()*1000)
+expires=int(float(override.get("expires_at_ms") or 0))
+checks={
+ "champion_targets_ssot_hlen": hlen("champion:targets:ssot")>=8,
+ "champion_target_hlen": hlen("champion:target")>=8,
+ "ssot_ram26": str(ssot.get("engine_version") or ssot.get("strategy_id") or ssot.get("version") or "").startswith("RAM26"),
+ "policy_ram26": str(policy.get("champion_strategy_name") or policy.get("strategy_id") or policy.get("champion_version") or "").startswith("RAM26"),
+ "bridge_active": sec("ares:bridge:active")=="LIVE_FINAL_TO_CHAMPION",
+ "bridge_producer": sec("ares:bridge:producer")=="ram26_final_to_champion_bridge_v2",
+ "g8_ready": sec("ares:open009:g8:status")=="READY",
+ "signed_override": override.get("decision")=="APPROVED" and expires>now,
+ "engine_gate": engine.get("pass") is True,
+ "kill_clear": sec("kill-switch:active").lower()!="true",
+}
+failed=[k for k,v in checks.items() if not v]
+out={"verdict":"ALL_GATES_GO" if not failed else "ALL_GATES_BLOCKED","pass":not failed,"failed":failed,"checks":checks,"timestamp_ms":now}
+Path(sys.argv[2]).write_text(json.dumps(out,indent=2,ensure_ascii=False))
+print(json.dumps(out,indent=2,ensure_ascii=False))
+PY
+
+PASS="$(python3 - "$OUT_DIR/all_gates.json" <<'PY'
+import json,sys
+print("true" if json.load(open(sys.argv[1])).get("pass") else "false")
+PY
+)"
+[[ "$PASS" == "true" ]] || { cat "$OUT_DIR/all_gates.json"; exit 10; }
+
+echo "REPORT=$OUT_DIR/all_gates.json"

@@ -1,0 +1,80 @@
+// ============================================================================
+// PM2 ecosystem for the SSOT source-ownership layer.
+// 2026-04-21 — structural fix for exec_src / engine_src orphan problem.
+//
+// Apply with:
+//   pm2 start /etc/ares/ecosystem.ssot_source_owners.cjs
+//   pm2 save
+// ============================================================================
+
+module.exports = {
+  apps: [
+    {
+      // Owns: ssot:target:v2:engine_src, ssot:target:v2:exec_src
+      // Reads: champion:targets:ssot (hash), champion:targets:ssot:ts
+      // Heartbeat: ssot:source:router:heartbeat (TTL 120s)
+      name: 'ares-upstream-ssot-router',
+      namespace: 'ssot',
+      script: '/home/ubuntu/ops/ares_upstream_ssot_router.py',
+      interpreter: 'python3',
+      cwd: '/home/ubuntu/ops',
+      autorestart: true,
+      max_restarts: 50,
+      min_uptime: '30s',
+      restart_delay: 3000,
+      exp_backoff_restart_delay: 1000,
+      kill_timeout: 8000,
+      watch: false,
+      time: true,
+      out_file: '/home/ubuntu/.pm2/logs/ares-upstream-ssot-router-out.log',
+      error_file: '/home/ubuntu/.pm2/logs/ares-upstream-ssot-router-error.log',
+      merge_logs: true,
+      env: {
+        NODE_ENV: 'production',
+        PYTHONUNBUFFERED: '1',
+        ARES_LOOP_SEC: '10',
+        ARES_ENGINE_SRC_TTL_SEC: '900',
+        ARES_EXEC_SRC_TTL_SEC: '600',
+        ARES_HEALTH_TTL_SEC: '180',
+        ARES_HEARTBEAT_TTL_SEC: '120',
+        ARES_MIN_SYMBOLS: '20',
+        ARES_MAX_SOURCE_AGE_SEC: '300',
+        ARES_SOURCE_HASH_KEY: 'champion:targets:ssot',
+        ARES_SOURCE_TS_KEY: 'champion:targets:ssot:ts',
+        ARES_ENGINE_SRC_KEY: 'ssot:target:v2:engine_src',
+        ARES_EXEC_SRC_KEY: 'ssot:target:v2:exec_src',
+        ARES_ROUTER_HEARTBEAT_KEY: 'ssot:source:router:heartbeat',
+        ARES_ENGINE_VERSION: 'v7.0_LOCKED_20260130',
+      },
+    },
+    {
+      // Owns: observation of all SSOT-critical keys per ownership.yaml.
+      // Emits: ssot:owner_guard:alert:<owner>, ssot:owner_guard:status,
+      //        ssot:owner_guard:heartbeat.
+      // Heals: pm2 restart <target> with cooldown + consecutive-cap.
+      name: 'ssot-source-owner-guard',
+      namespace: 'ssot',
+      script: '/home/ubuntu/ops/ssot_source_owner_guard.py',
+      interpreter: 'python3',
+      cwd: '/home/ubuntu/ops',
+      autorestart: true,
+      max_restarts: 50,
+      min_uptime: '30s',
+      restart_delay: 5000,
+      exp_backoff_restart_delay: 2000,
+      kill_timeout: 8000,
+      watch: false,
+      time: true,
+      out_file: '/home/ubuntu/.pm2/logs/ssot-source-owner-guard-out.log',
+      error_file: '/home/ubuntu/.pm2/logs/ssot-source-owner-guard-error.log',
+      merge_logs: true,
+      env: {
+        NODE_ENV: 'production',
+        PYTHONUNBUFFERED: '1',
+        OWNER_GUARD_INTERVAL: '60',
+        ARES_SSOT_OWNERSHIP_CONTRACT: '/etc/ares/ssot_source_ownership.yaml',
+        OWNER_GUARD_DRY_RUN: '0',
+      },
+    },
+  ],
+};

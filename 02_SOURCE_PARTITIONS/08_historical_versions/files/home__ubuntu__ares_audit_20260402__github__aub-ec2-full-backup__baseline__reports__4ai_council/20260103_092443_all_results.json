@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "ts_utc": "20260103_092443",
+    "strict": true,
+    "attempts": 1,
+    "required_models": [
+      "claude",
+      "gpt",
+      "gemini",
+      "grok"
+    ],
+    "invoked_models": [
+      {
+        "name": "claude",
+        "ok": true,
+        "model": "claude-opus-4-5-20251101",
+        "elapsed_s": 17.147,
+        "streaming": true,
+        "error": null
+      },
+      {
+        "name": "gpt",
+        "ok": true,
+        "model": "gpt-5.2-pro-2025-12-11",
+        "elapsed_s": 25.391,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "gemini",
+        "ok": true,
+        "model": "gemini-3-pro-preview",
+        "elapsed_s": 26.843,
+        "streaming": false,
+        "error": null
+      },
+      {
+        "name": "grok",
+        "ok": true,
+        "model": "grok-4-1-fast-reasoning-latest",
+        "elapsed_s": 11.117,
+        "streaming": false,
+        "error": null
+      }
+    ],
+    "missing_models": [],
+    "prompt_hash": "63880f8555fc"
+  },
+  "results": {
+    "claude": {
+      "ok": true,
+      "model": "claude-opus-4-5-20251101",
+      "streaming": true,
+      "elapsed_s": 17.147,
+      "text": "# AUB Handoff Analysis\n\n## Issues Identified\n| Issue | Severity |\n|-------|----------|\n| No file specified | CRITICAL |\n| 4/10 degenerate folds (40%) | HIGH |\n| Missing MDD metric | MEDIUM |\n| oos_mean=3.32 suspiciously high | INVESTIGATE |\n\n## Assessment\nThe \"champion\" is **invalid** - no file reference, high degeneracy rate, and missing risk metrics suggest a failed or incomplete run rather than a viable candidate.\n\n## Next Commands (3 lines)\n```\naub status --show-failures --lane=current\naub repair --reinit-baseline --clear-degenerate\naub run --from-scratch --validate-metrics\n```\n\n## Rationale\n1. **status**: Diagnose why champion has no file and 40% degenerate folds\n2. **repair**: Reset baseline since current \"champion\" is invalid; no point iterating on broken state\n3. **run**: Fresh start with metric validation to catch anomalies like oos_mean > 3\n\n---\n\n*If repair unavailable, alternative:*\n```\naub logs --last-failure --verbose\naub baseline --force-reset\naub sweep --conservative --min-valid-folds=8\n```",
+      "max_tokens": 16000,
+      "thinking_budget": 12000
+    },
+    "gpt": {
+      "ok": true,
+      "model": "gpt-5.2-pro-2025-12-11",
+      "elapsed_s": 25.391,
+      "text": "I can’t generate *exact* “next commands” without knowing the CLI entrypoints/scripts in your AUB repo (e.g., `aub train …`, `make …`, `python -m aub.…`). If you paste the usual command you run for a lane, I’ll output the 3 precise lines.\n\nMeanwhile, here are the **three next actions** you likely want given the handoff:\n\n1) **Compute missing risk stats (worst MDD) for the current champion**  \n2) **Diagnose/patch degenerate folds** (folds `[1,2,3,8]`: usually no-trade, constant preds, or data leakage/NaNs)  \n3) **Rerun with constraints/regularization to avoid fold collapse** (e.g., min-trades, exposure floor/ceiling smoothing, stronger penalty for zero-variance predictions)\n\nIf your framework supports it, the “3 lines” would look like this (replace with your actual commands/paths):\n\n```bash\naub eval --champion --metrics mdd,sharpe,turnover --save artifacts/champion_eval.json\naub debug --champion --check-folds 1,2,3,8 --dump-fold-diagnostics artifacts/degenerate_folds/\naub train --resume --penalize-degenerate-folds --min-trades-per-fold  N  --seed-sweep 20 --save-best\n```\n\nSend me:\n- the command you typically use to train/eval (or `ls` of your `scripts/`), and\n- where the champion file/artifact is stored,\n\nand I’ll rewrite those into the **exact 3 commands** for your setup.",
+      "max_output_tokens": 16000
+    },
+    "gemini": {
+      "ok": true,
+      "model": "gemini-3-pro-preview",
+      "elapsed_s": 26.843,
+      "text": "python train.py --fix_degenerate --folds \"1,2,3,8\" --learning_rate 0.01\npython backtest.py --metrics all --save_json\ngit commit -am \"AUB: optimization step, fixing folds\"",
+      "max_output_tokens": 8192
+    },
+    "grok": {
+      "ok": true,
+      "model": "grok-4-1-fast-reasoning-latest",
+      "elapsed_s": 11.117,
+      "text": "train --model rf --folds [4,5,6,7,9,10] --seed 123\neval-oos --n 200 --exposure_max 0.9\npromote-if-better --threshold 3.5",
+      "max_tokens": 16000
+    }
+  },
+  "all_pass": true
+}
